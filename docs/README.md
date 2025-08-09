@@ -21,39 +21,39 @@ A Node.js script that automatically scrapes LinkedIn profiles and company data u
 ├── .env.example                      # Environment variables template
 ├── .gitignore                        # Git ignore rules
 ├── README.md                         # This file
-├── scrapers/
-│   ├── profileScraper.js             # LinkedIn profile scraping logic
-│   └── companyScraper.js             # LinkedIn company scraping logic
-├── services/
-│   ├── airtableService.js            # Airtable data operations
-│   ├── webhookService.js             # Error webhook notifications
-│   └── googleSheetsService.js        # Google Sheets data fetching
+├── src/
+│   ├── scrapers/
+│   │   └── profileScraper.js         # LinkedIn profile scraping logic
+│   ├── services/
+│   │   ├── airtableService.js        # Airtable data operations
+│   │   ├── webhookService.js         # Error webhook notifications
+│   │   └── googleSheetsService.js    # Google Sheets data fetching
+│   └── utils/
+│       └── apifyDataMapper.js        # Mapping Apify response to Airtable fields
 └── .github/
     └── copilot-instructions.md       # Copilot coding guidelines
 ```
 
 ## Modules Overview
 
-### 🔍 Profile Scraper (`scrapers/profileScraper.js`)
+### 🔍 Profile Scraper (`src/scrapers/profileScraper.js`)
 - Handles LinkedIn profile scraping using `curious_coder~linkedin-post-search-scraper`
 - Extracts company URLs from profile data
 - Includes retry logic and error handling
 
-### 🏢 Company Scraper (`scrapers/companyScraper.js`)
-- Handles LinkedIn company scraping using `curious_coder~linkedin-company-scraper`
-- Processes company URLs extracted from profiles
-- Includes retry logic and error handling
+### 🏢 Company Scraper
+Deprecated/removed. Profile scraper returns company context; project now focuses on profile flow.
 
-### 📝 Airtable Service (`services/airtableService.js`)
+### 📝 Airtable Service (`src/services/airtableService.js`)
 - Manages all Airtable operations
 - Formats data for Airtable insertion
 - Combines profile and company data
 
-### 🚨 Webhook Service (`services/webhookService.js`)
+### 🚨 Webhook Service (`src/services/webhookService.js`)
 - Handles error notifications via webhooks
 - Sends structured error data to Make.com scenarios
 
-### 📊 Google Sheets Service (`services/googleSheetsService.js`)
+### 📊 Google Sheets Service (`src/services/googleSheetsService.js`)
 - Fetches data from Google Spreadsheets
 - Parses CSV data with error handling
 - Automatically detects LinkedIn URL columns
