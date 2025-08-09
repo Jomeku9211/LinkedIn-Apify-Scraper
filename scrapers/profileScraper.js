@@ -48,42 +48,36 @@ async function runProfileScraper(input, apiToken, retryCount = 0) {
 }
 
 /**
- * Extract company URL from LinkedIn profile data
- */
-function extractCompanyUrl(profileData) {
-  // Look for company URL in various possible fields
-  if (profileData.experiences && profileData.experiences.length > 0) {
-    const currentJob = profileData.experiences[0];
-    if (currentJob.companyUrl) {
-      return currentJob.companyUrl;
-    }
-    if (currentJob.company) {
-      // Try to construct LinkedIn company URL from company name
-      const companySlug = currentJob.company.toLowerCase()
-        .replace(/[^a-z0-9]/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
-      return `https://www.linkedin.com/company/${companySlug}`;
-    }
-  }
-  
-  return null;
-}
-
-/**
  * Scrape LinkedIn profile data
  */
-async function scrapeProfile(profileUrl, cookies, apiToken) {
+async function scrapeProfile(profileUrl, linkedinCookies, apifyToken, contactCompassToken) {
+  // Construct input exactly as the actor expects it
   const input = {
-    urls: [profileUrl],
-    cookies: cookies
+    "cookie": linkedinCookies, // Array of detailed cookie objects
+    "findContacts": true,
+    "findContacts.contactCompassToken": contactCompassToken,
+    "maxDelay": 60,
+    "minDelay": 15,
+    "proxy": {
+      "useApifyProxy": true,
+      "apifyProxyCountry": "US"
+    },
+    "scrapeCompany": false, // Only scrape profile, not company
+    "urls": [profileUrl]
   };
   
-  return await runProfileScraper(input, apiToken);
+  console.log('🔧 Profile scraper input constructed with:');
+  console.log('- URLs:', input.urls);
+  console.log('- LinkedIn cookies:', input.cookie.length, 'cookies provided');
+  console.log('- Find contacts:', input.findContacts);
+  console.log('- Contact compass token:', contactCompassToken ? 'provided' : 'missing');
+  console.log('- Scrape company:', input.scrapeCompany);
+  console.log('- Proxy config:', input.proxy);
+  
+  return await runProfileScraper(input, apifyToken);
 }
 
 module.exports = {
   runProfileScraper,
-  extractCompanyUrl,
   scrapeProfile
 };

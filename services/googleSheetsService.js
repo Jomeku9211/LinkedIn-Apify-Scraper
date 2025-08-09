@@ -9,7 +9,14 @@ async function fetchSpreadsheetData(spreadsheetUrl) {
     console.log('📊 Fetching data from Google Spreadsheet...');
     
     const response = await axios.get(spreadsheetUrl);
-    const csvData = response.data;
+    const csvData = response.data.trim();
+    
+    // Check if the data is just URLs without headers
+    if (csvData.includes('linkedin.com') && !csvData.includes(',')) {
+      console.log('📝 Detected simple URL list format, converting to CSV...');
+      const urls = csvData.split('\n').filter(url => url.trim().includes('linkedin.com'));
+      return urls.map(url => ({ 'LinkedIn Profile URL': url.trim() }));
+    }
     
     const parsed = Papa.parse(csvData, {
       header: true,
@@ -17,8 +24,8 @@ async function fetchSpreadsheetData(spreadsheetUrl) {
     });
     
     if (parsed.errors.length > 0) {
-      console.error('❌ CSV parsing errors:', parsed.errors);
-      throw new Error('Failed to parse CSV data');
+      console.warn('⚠️ CSV parsing warnings:', parsed.errors);
+      // Don't throw error for delimiter warnings, just continue
     }
     
     console.log(`✅ Successfully fetched ${parsed.data.length} records`);

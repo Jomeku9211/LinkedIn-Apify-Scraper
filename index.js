@@ -1,17 +1,15 @@
+require('dotenv').config();
+
 const profileScraper = require('./scrapers/profileScraper');
-const companyScraper = require('./scrapers/companyScraper');
 const airtableService = require('./services/airtableService');
 const webhookService = require('./services/webhookService');
 const googleSheetsService = require('./services/googleSheetsService');
 
-// Load environment variables
-require('dotenv').config();
-
 // Configuration Constants
 const GOOGLE_SPREADSHEET_URL = process.env.GOOGLE_SPREADSHEET_URL || 'https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/export?format=csv';
 const APIFY_PROFILE_TOKEN = process.env.APIFY_PROFILE_TOKEN;
-const APIFY_COMPANY_TOKEN = process.env.APIFY_COMPANY_TOKEN;
-const APIFY_COOKIES_JSON = JSON.parse(process.env.APIFY_COOKIES_JSON || '{}');
+const APIFY_COOKIES_JSON = JSON.parse(process.env.APIFY_COOKIES_JSON || '[]');
+const CONTACT_COMPASS_TOKEN = process.env.CONTACT_COMPASS_TOKEN;
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || 'appD9VxZrOhiQY9VB';
 const AIRTABLE_TABLE_NAME = process.env.AIRTABLE_TABLE_NAME || 'tblyhMPmCt87ORo3t';
@@ -32,45 +30,17 @@ async function processProfile(profileUrl, index, total) {
   console.log(`\n🔍 Processing profile ${index + 1}/${total}: ${profileUrl}`);
   
   try {
-    // Step 1: Scrape LinkedIn profile
-    const profileData = await profileScraper.scrapeProfile(profileUrl, APIFY_COOKIES_JSON, APIFY_PROFILE_TOKEN);
-    
-    // Step 2: Extract company URL and scrape company
-    const companyUrl = profileScraper.extractCompanyUrl(profileData);
-    let companyData = null;
-    
-    if (companyUrl) {
-      console.log(`🏢 Found company URL: ${companyUrl}`);
-      
-      try {
-        companyData = await companyScraper.scrapeCompany(companyUrl, APIFY_COOKIES_JSON, APIFY_COMPANY_TOKEN);
-        
-      } catch (companyError) {
-        console.error('❌ Error scraping company:', companyError.message);
-        await webhookService.triggerWebhook({
-          type: 'company_scraping_error',
-          profileUrl,
-          companyUrl,
-          error: companyError.message,
-          errorDetails: {
-            message: companyError.message,
-            stack: companyError.stack,
-            timestamp: new Date().toISOString(),
-            scraper: 'company',
-            actor: 'curious_coder~linkedin-company-scraper'
-          }
-        }, WEBHOOK_URL);
-      }
-    } else {
-      console.log('⚠️ No company URL found in profile');
-    }
-    
-    // Step 3: Insert combined data into Airtable
-    await airtableService.insertCombinedData(
+    // Scrape LinkedIn profile
+    const profileData = await profileScraper.scrapeProfile(
       profileUrl, 
-      profileData, 
-      companyData, 
-      companyUrl, 
+      APIFY_COOKIES_JSON, 
+      APIFY_PROFILE_TOKEN,
+      CONTACT_COMPASS_TOKEN
+    );
+    
+    // Insert profile data into Airtable
+    await airtableService.insertRecord(
+      profileData,
       AIRTABLE_TOKEN, 
       AIRTABLE_BASE_ID, 
       AIRTABLE_TABLE_NAME
@@ -111,6 +81,9 @@ async function main() {
     }
     if (!APIFY_PROFILE_TOKEN || APIFY_PROFILE_TOKEN === 'YOUR_APIFY_PROFILE_TOKEN') {
       throw new Error('Please configure APIFY_PROFILE_TOKEN');
+    }
+    if (!CONTACT_COMPASS_TOKEN || CONTACT_COMPASS_TOKEN === 'your_contact_compass_token_here') {
+      throw new Error('Please configure CONTACT_COMPASS_TOKEN');
     }
     if (!AIRTABLE_TOKEN || AIRTABLE_TOKEN === 'YOUR_AIRTABLE_TOKEN') {
       throw new Error('Please configure AIRTABLE_TOKEN');
