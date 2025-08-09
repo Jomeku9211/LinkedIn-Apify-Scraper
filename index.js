@@ -41,7 +41,14 @@ async function processProfile(profileUrl, index, total) {
     
     // Use detailed mapping function to map profile data to Airtable fields
     console.log('🗺️ Mapping Apify LinkedIn response to Airtable format...');
-    const airtableData = mapApifyResponseToAirtable(profileData, profileUrl);
+    let airtableData;
+    try {
+      airtableData = mapApifyResponseToAirtable(profileData, profileUrl);
+      console.log('✅ Mapping completed successfully');
+    } catch (mappingError) {
+      console.error('❌ Error during mapping:', mappingError.message);
+      throw mappingError;
+    }
     
     // Validate the mapped data before sending to Airtable
     const isValid = validateAirtableData(airtableData, ['firstName', 'lastName', 'linkedinUrl']);
@@ -49,22 +56,30 @@ async function processProfile(profileUrl, index, total) {
     if (!isValid) {
       throw new Error('Profile data validation failed - missing required fields');
     }
-    
+
     console.log('📝 Sample mapped data (first 5 fields):');
     const sampleData = Object.entries(airtableData).slice(0, 5);
     sampleData.forEach(([key, value]) => {
       console.log(`   ${key}: ${typeof value === 'string' && value.length > 50 ? value.substring(0, 50) + '...' : value}`);
     });
-    
+
     // Insert profile data into Airtable
-    await airtableService.insertRecord(
-      airtableData,
-      AIRTABLE_TOKEN, 
-      AIRTABLE_BASE_ID, 
-      AIRTABLE_TABLE_NAME
-    );
+    try {
+      console.log('📤 Sending data to Airtable...');
+      await airtableService.insertRecord(
+        airtableData,
+        AIRTABLE_TOKEN, 
+        AIRTABLE_BASE_ID, 
+        AIRTABLE_TABLE_NAME
+      );
+      console.log('✅ Successfully inserted into Airtable');
+    } catch (airtableError) {
+      console.error('❌ Error during Airtable insertion:', airtableError.message);
+      throw airtableError;
+    }
     
     console.log(`✅ Successfully processed profile ${index + 1}/${total}`);
+    return true; // Return success status
     
   } catch (error) {
     console.error(`❌ Error processing profile ${index + 1}/${total}:`, error.message);
@@ -90,6 +105,7 @@ async function processProfile(profileUrl, index, total) {
     };
     
     await webhookService.triggerWebhook(errorDetails, WEBHOOK_URL);
+    return false; // Return failure status
   }
 }
 
@@ -124,12 +140,27 @@ async function main() {
     // Find LinkedIn URL column (case insensitive)
     const linkedinColumn = googleSheetsService.findLinkedInColumn(spreadsheetData);
     
-    console.log(`📋 Found LinkedIn column: "${linkedinColumn}"`);
-    console.log(`🎯 Processing ${spreadsheetData.length} profiles...`);
+    // Find status column for filtering and updating
+    const statusColumn = googleSheetsService.findStatusColumn(spreadsheetData);
     
-    // Process each profile
-    for (let i = 0; i < spreadsheetData.length; i++) {
-      const row = spreadsheetData[i];
+    console.log(`📋 Found LinkedIn column: "${linkedinColumn}"`);
+    if (statusColumn) {
+      console.log(`📊 Found status column: "${statusColumn}"`);
+    }
+    
+    // Filter to only process "To Do" items
+    const todoItems = googleSheetsService.filterToDoItems(spreadsheetData, statusColumn);
+    
+    if (todoItems.length === 0) {
+      console.log('📝 No "To Do" items found to process');
+      return;
+    }
+    
+    console.log(`🎯 Processing ${todoItems.length} profiles...`);
+    
+    // Process each "To Do" profile
+    for (let i = 0; i < todoItems.length; i++) {
+      const row = todoItems[i];
       const profileUrl = row[linkedinColumn];
       
       if (!profileUrl || !profileUrl.includes('linkedin.com')) {
@@ -137,7 +168,20 @@ async function main() {
         continue;
       }
       
-      await processProfile(profileUrl, i, spreadsheetData.length);
+      const success = await processProfile(profileUrl, i, todoItems.length);
+      
+      // Update status to "Done" if processing was successful and status column exists
+      if (success && statusColumn) {
+        const originalIndex = spreadsheetData.findIndex(originalRow => 
+          originalRow[linkedinColumn] === profileUrl
+        );
+        await googleSheetsService.updateRowStatus(
+          GOOGLE_SPREADSHEET_URL, 
+          originalIndex, 
+          statusColumn, 
+          'Done'
+        );
+      }
       
       // Add delay between requests to avoid rate limiting
       if (i < spreadsheetData.length - 1) {

@@ -70,6 +70,9 @@ async function insertRecord(data, airtableToken, baseId, tableName) {
       } else if (error.response.status === 404) {
         console.error('🔍 Base or table not found - check your base ID and table name');
       }
+      
+      // Re-throw with the actual Airtable error message
+      throw new Error(error.response.data?.error?.message || error.message);
     } else if (error.code === 'ECONNABORTED') {
       console.error('⏱️ Request timed out - Airtable might be slow');
     } else if (error.code === 'ENOTFOUND') {

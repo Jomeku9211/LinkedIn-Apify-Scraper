@@ -77,6 +77,8 @@ function mapApifyResponseToAirtable(apifyData, profileUrl) {
   // Helper function to format profile picture for Airtable attachment field
   const formatProfilePicture = (pictureUrl) => {
     if (!pictureUrl) return null;
+    
+    // For now, return URL-based attachment - Airtable can fetch from public URLs
     return [{
       url: pictureUrl,
       filename: 'profile_picture.jpg'
@@ -288,6 +290,7 @@ function mapApifyResponseToAirtable(apifyData, profileUrl) {
     'twitter_url': profile.twitter_url || '',
     'email': safeGet(profile, 'contactInfo.email') || '',
     'Company_phone': formatContactPhones(profile.contactInfo), // Fixed: Changed to Company_phone for Airtable
+    'time/zone': safeGet(profile, 'contactInfo.time_zone') || '', // Time zone from contactInfo
     
     // LinkedIn Profile Details
     'Linkedin Headline': profile.occupation || profile.headline || safeGet(profile, 'contactInfo.headline') || '',
@@ -337,9 +340,9 @@ function mapApifyResponseToAirtable(apifyData, profileUrl) {
     'honors': formatHonors(profile.honors),
     'volunteering': formatVolunteerExperience(profile.volunteerExperiences), // Fixed: plural field name
     
-    // Profile Media - Temporarily disabled for testing
-    // 'Profile Picture': formatProfilePicture(profile.pictureUrl),
-    // 'companyLogo': formatCompanyLogo(profile.currentCompany?.logoUrl),
+    // Profile Media
+    'Profile Picture': formatProfilePicture(profile.pictureUrl),
+    // 'companyLogo': formatCompanyLogo(profile.currentCompany?.logoUrl), // Disabled for now
     
     // Email Verification Status
     // 'emailStatus': safeGet(profile, 'contactInfo.email') ? 'Found via LinkedIn' : 'Not Found', // Removed: not needed
@@ -359,7 +362,17 @@ function mapApifyResponseToAirtable(apifyData, profileUrl) {
     // 'Community Status': 'Not Contacted',
     
     // Additional useful fields from the rich data
-    'website': getCompanyWebsite() ? new URL(getCompanyWebsite()).hostname : ''
+    'website': (() => {
+      const websiteUrl = getCompanyWebsite();
+      if (!websiteUrl) return '';
+      
+      try {
+        return new URL(websiteUrl).hostname;
+      } catch (e) {
+        console.log(`⚠️ Invalid website URL: ${websiteUrl}`);
+        return websiteUrl; // Return the original URL if it's malformed but not empty
+      }
+    })()
   };
 
   // Clean up empty fields and log mapping results
