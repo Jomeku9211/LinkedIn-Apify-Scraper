@@ -1,7 +1,7 @@
 require('dotenv').config();
 
-const { mapApifyResponseToAirtable } = require('./utils/apifyDataMapper');
-const airtableService = require('./services/airtableService');
+const { mapApifyResponseToAirtable } = require('./src/utils/apifyDataMapper');
+const airtableService = require('./src/services/airtableService');
 
 // Configuration  
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;

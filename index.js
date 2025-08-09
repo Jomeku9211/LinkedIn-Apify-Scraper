@@ -1,10 +1,11 @@
 require('dotenv').config();
 
-const profileScraper = require('./scrapers/profileScraper');
-const airtableService = require('./services/airtableService');
-const webhookService = require('./services/webhookService');
-const googleSheetsService = require('./services/googleSheetsService');
-const { mapApifyResponseToAirtable, validateAirtableData } = require('./utils/apifyDataMapper');
+// Use consolidated modules from src/
+const profileScraper = require('./src/scrapers/profileScraper');
+const airtableService = require('./src/services/airtableService');
+const webhookService = require('./src/services/webhookService');
+const googleSheetsService = require('./src/services/googleSheetsService');
+const { mapApifyResponseToAirtable, validateAirtableData } = require('./src/utils/apifyDataMapper');
 
 // Configuration Constants
 const GOOGLE_SPREADSHEET_URL = process.env.GOOGLE_SPREADSHEET_URL || 'https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/export?format=csv';

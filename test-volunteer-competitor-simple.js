@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const airtableService = require('./services/airtableService');
+const airtableService = require('./src/services/airtableService');
 
 // Configuration
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;

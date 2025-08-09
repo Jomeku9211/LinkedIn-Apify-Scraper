@@ -1,5 +1,5 @@
 // Test script for the new Apify data mapper
-const { mapApifyResponseToAirtable, validateAirtableData } = require('./utils/apifyDataMapper');
+const { mapApifyResponseToAirtable, validateAirtableData } = require('./src/utils/apifyDataMapper');
 
 // Real Apify response data (sample from user)
 const testApifyData = [{

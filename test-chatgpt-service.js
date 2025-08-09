@@ -1,5 +1,5 @@
 // Test ChatGPT service functionality
-const { generateComment } = require('./services/chatgptService');
+const { generateComment } = require('./src/services/chatgptService');
 
 console.log('✅ ChatGPT service imported successfully');
 console.log('🔧 Testing service structure...');

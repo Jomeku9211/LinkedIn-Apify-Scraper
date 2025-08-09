@@ -1,4 +1,4 @@
-const googleSheetsService = require('./services/googleSheetsService');
+const googleSheetsService = require('./src/services/googleSheetsService');
 const fs = require('fs');
 
 /**

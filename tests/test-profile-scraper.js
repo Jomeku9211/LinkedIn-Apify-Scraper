@@ -27,7 +27,7 @@ axios.post = async (url, data, config) => {
 };
 
 // Require after mock is in place
-const profileScraper = require('../scrapers/profileScraper');
+const profileScraper = require('../src/scrapers/profileScraper');
 console.log('Exported keys from profileScraper:', Object.keys(profileScraper));
 
 (async function runTests() {
