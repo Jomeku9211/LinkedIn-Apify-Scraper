@@ -1,0 +1,28 @@
+{
+  "name": "linkedin-scraper",
+  "version": "1.0.0",
+  "description": "LinkedIn profile and company scraping with Airtable integration",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "linkedin",
+    "scraping",
+    "apify",
+    "airtable",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.2",
+    "papaparse": "^5.4.1",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
