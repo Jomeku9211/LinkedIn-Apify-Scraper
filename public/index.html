@@ -312,6 +312,7 @@
         <div class="tabs">
             <button class="tab active" onclick="showTab('profile-scraper')">👤 Profile Scraper</button>
             <button class="tab" onclick="showTab('post-scraper')">📄 Post Scraper</button>
+            <button class="tab" onclick="showTab('chatgpt-agent')">🤖 ChatGPT Agent</button>
         </div>
 
         <!-- Profile Scraper Tab -->
@@ -455,6 +456,55 @@
             </div>
         </div>
         </div>
+
+        <!-- ChatGPT Agent Tab -->
+        <div id="chatgpt-agent" class="tab-content">
+        <div class="main-content">
+            <!-- Configuration Panel -->
+            <div class="config-panel">
+                <h2 style="margin-bottom: 20px; color: #2d3748;">🤖 ChatGPT Agent</h2>
+
+                <button class="start-btn" onclick="startChatGPTProcessing()" id="chatgptStartBtn">
+                    🤖 Start Comment Generation
+                </button>
+            </div>
+
+            <!-- Status Panel -->
+            <div class="status-panel">
+                <h2 style="margin-bottom: 20px; color: #2d3748;">📊 ChatGPT Processing Status</h2>
+
+                <div class="status-section">
+                    <h3 style="margin-bottom: 10px; color: #2d3748;">⏱️ Session Timer</h3>
+                    <div class="timer" id="chatgptTimer">00:00:00</div>
+                </div>
+
+                <div class="status-section">
+                    <h3 style="margin-bottom: 10px; color: #2d3748;">📈 Statistics</h3>
+                    <div class="stat-item">
+                        <span class="stat-label">Records Processed:</span>
+                        <span class="stat-value" id="chatgptRecordsCount">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Total Records:</span>
+                        <span class="stat-value" id="chatgptTotalCount">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Comments Generated:</span>
+                        <span class="stat-value" id="chatgptCommentsCount">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Errors:</span>
+                        <span class="stat-value error" id="chatgptErrorsCount">0</span>
+                    </div>
+                </div>
+
+                <h3 style="margin-bottom: 10px; color: #2d3748;">📝 Live Logs</h3>
+                <div class="log-container" id="chatgptLogContainer">
+                    <div class="log-entry log-info">💡 Configure your settings and click "Start Comment Generation" to begin...</div>
+                </div>
+            </div>
+        </div>
+        </div>
     </div>
 
     <script>
@@ -475,6 +525,17 @@
         let postTimerInterval = null;
         let postStats = {
             posts: 0,
+            total: 0,
+            errors: 0,
+            processed: 0
+        };
+
+        // ChatGPT Agent Variables
+        let isChatGPTRunning = false;
+        let chatgptStartTime = null;
+        let chatgptTimerInterval = null;
+        let chatgptStats = {
+            records: 0,
             total: 0,
             errors: 0,
             processed: 0
@@ -936,6 +997,139 @@
             } catch (error) {
                 addPostLog(`❌ Error checking status: ${error.message}`, 'error');
                 setTimeout(pollPostUpdates, 5000); // Retry after 5 seconds
+            }
+        }
+
+        // ====== ChatGPT Agent Functions ======
+
+        function updateChatGPTStats() {
+            document.getElementById('chatgptRecordsCount').textContent = chatgptStats.processed;
+            document.getElementById('chatgptTotalCount').textContent = chatgptStats.total;
+            document.getElementById('chatgptCommentsCount').textContent = chatgptStats.records;
+            document.getElementById('chatgptErrorsCount').textContent = chatgptStats.errors;
+        }
+
+        function updateChatGPTTimer() {
+            if (chatgptStartTime) {
+                const elapsed = Math.floor((Date.now() - chatgptStartTime) / 1000);
+                const hours = Math.floor(elapsed / 3600).toString().padStart(2, '0');
+                const minutes = Math.floor((elapsed % 3600) / 60).toString().padStart(2, '0');
+                const seconds = (elapsed % 60).toString().padStart(2, '0');
+                document.getElementById('chatgptTimer').textContent = `${hours}:${minutes}:${seconds}`;
+            }
+        }
+
+        function addChatGPTLog(message, type = 'info') {
+            const logContainer = document.getElementById('chatgptLogContainer');
+            const timestamp = new Date().toLocaleTimeString();
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.innerHTML = `<span class="log-time">${timestamp}</span> ${message}`;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            // Keep only the last 50 log entries
+            while (logContainer.children.length > 50) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+
+        async function startChatGPTProcessing() {
+            if (isChatGPTRunning) {
+                addChatGPTLog('⚠️ ChatGPT processing is already running', 'warning');
+                return;
+            }
+
+            try {
+                // Reset stats
+                chatgptStats = { records: 0, total: 0, errors: 0, processed: 0 };
+                updateChatGPTStats();
+
+                // Clear logs
+                document.getElementById('chatgptLogContainer').innerHTML = '';
+                addChatGPTLog('🚀 Starting ChatGPT comment generation...', 'info');
+
+                const response = await fetch('/api/start-chatgpt', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({}) // Empty body - all config from env
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    isChatGPTRunning = true;
+                    chatgptStartTime = Date.now();
+                    chatgptTimerInterval = setInterval(updateChatGPTTimer, 1000);
+                    
+                    document.getElementById('chatgptStartBtn').textContent = '⏹️ Stop Processing';
+                    document.getElementById('chatgptStartBtn').onclick = stopChatGPTProcessing;
+                    
+                    addChatGPTLog('✅ ChatGPT processing started successfully!', 'success');
+                    
+                    // Start polling for updates
+                    pollChatGPTUpdates();
+                } else {
+                    addChatGPTLog(`❌ Failed to start: ${result.error}`, 'error');
+                }
+
+            } catch (error) {
+                addChatGPTLog(`❌ Error starting ChatGPT processing: ${error.message}`, 'error');
+            }
+        }
+
+        function stopChatGPTProcessing() {
+            isChatGPTRunning = false;
+            
+            if (chatgptTimerInterval) {
+                clearInterval(chatgptTimerInterval);
+                chatgptTimerInterval = null;
+            }
+            
+            document.getElementById('chatgptStartBtn').textContent = '🤖 Start Comment Generation';
+            document.getElementById('chatgptStartBtn').onclick = startChatGPTProcessing;
+            
+            addChatGPTLog('⏹️ ChatGPT processing stopped', 'warning');
+        }
+
+        async function pollChatGPTUpdates() {
+            if (!isChatGPTRunning) return;
+            
+            try {
+                const response = await fetch('/api/chatgpt-status');
+                const data = await response.json();
+                
+                // Update stats
+                chatgptStats = {
+                    records: data.records || 0,
+                    total: data.total || 0,
+                    errors: data.errors || 0,
+                    processed: data.processed || 0
+                };
+                updateChatGPTStats();
+                
+                // Add new logs
+                if (data.logs && data.logs.length > 0) {
+                    data.logs.forEach(log => {
+                        addChatGPTLog(log.message, log.type);
+                    });
+                }
+                
+                if (data.completed) {
+                    addChatGPTLog('🎉 ChatGPT processing completed!', 'success');
+                    stopChatGPTProcessing();
+                } else {
+                    // Continue polling
+                    setTimeout(pollChatGPTUpdates, 2000);
+                }
+                
+            } catch (error) {
+                addChatGPTLog(`❌ Error checking status: ${error.message}`, 'error');
+                setTimeout(pollChatGPTUpdates, 5000); // Retry after 5 seconds
             }
         }
 
