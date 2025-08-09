@@ -83,6 +83,106 @@ async function insertRecord(data, airtableToken, baseId, tableName) {
   }
 }
 
+/**
+ * Fetch LinkedIn URLs from a specific Airtable view
+ */
+async function fetchUrlsFromView(airtableToken, baseId, tableName, viewId) {
+  try {
+    console.log(`📋 Fetching LinkedIn URLs from Airtable view: ${viewId}`);
+    
+    const response = await axios.get(
+      `https://api.airtable.com/v0/${baseId}/${tableName}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${airtableToken}`,
+          'Content-Type': 'application/json'
+        },
+        params: {
+          view: viewId,
+          fields: ['linkedinUrl'] // Only fetch the LinkedIn URL field
+        },
+        timeout: 30000
+      }
+    );
+
+    const records = response.data.records;
+    console.log(`📊 Found ${records.length} records in view`);
+    
+    // Extract LinkedIn URLs and filter out empty ones
+    const urls = records
+      .map(record => record.fields.linkedinUrl)
+      .filter(url => url && url.trim())
+      .map(url => url.trim());
+    
+    console.log(`✅ Extracted ${urls.length} valid LinkedIn URLs`);
+    return urls;
+
+  } catch (error) {
+    console.error('❌ Error fetching URLs from Airtable view:', error.message);
+    
+    if (error.response) {
+      console.error('❌ Status Code:', error.response.status);
+      console.error('❌ Airtable error response:', JSON.stringify(error.response.data, null, 2));
+      
+      if (error.response.status === 404) {
+        console.error('🔍 View not found - check your view ID');
+      }
+    }
+    
+    throw error;
+  }
+}
+
+/**
+ * Insert post data into Airtable
+ */
+async function insertPostData(postData, airtableToken, baseId, tableName) {
+  try {
+    console.log('📝 Inserting post data into Airtable...');
+    console.log(`📊 Post data contains ${Object.keys(postData).length} fields`);
+    
+    // Log some key fields for debugging
+    console.log('📤 Key post data fields:');
+    const keyFields = ['postText', 'authorName', 'likesCount', 'commentsCount', 'postUrl'];
+    keyFields.forEach(field => {
+      if (postData[field] !== undefined) {
+        const value = typeof postData[field] === 'string' && postData[field].length > 100 ? 
+          postData[field].substring(0, 100) + '...' : postData[field];
+        console.log(`   ${field}: ${value}`);
+      }
+    });
+
+    const response = await axios.post(
+      `https://api.airtable.com/v0/${baseId}/${tableName}`,
+      {
+        fields: postData
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${airtableToken}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      }
+    );
+
+    console.log(`✅ Successfully inserted post record with ID: ${response.data.id}`);
+    return response.data;
+
+  } catch (error) {
+    console.error('❌ Error inserting post data into Airtable:', error.message);
+    
+    if (error.response) {
+      console.error('❌ Status Code:', error.response.status);
+      console.error('❌ Airtable error response:', JSON.stringify(error.response.data, null, 2));
+    }
+    
+    throw error;
+  }
+}
+
 module.exports = {
-  insertRecord
+  insertRecord,
+  fetchUrlsFromView,
+  insertPostData
 };

@@ -317,7 +317,13 @@ function mapApifyResponseToAirtable(apifyData, profileUrl) {
     'companyIndustry': profile.industryName || safeGet(profile, 'currentCompany.industries.0.name') || '',
     'companySize': formatCompanySize(safeGet(profile, 'currentCompany.employeeCountRange')),
     'companyFoundedOn': safeGet(profile, 'currentCompany.foundedOn.year')?.toString() || '', // Fixed field name
-    'Company Funding': safeGet(profile, 'currentCompany.crunchbaseFundingData') ? JSON.stringify(safeGet(profile, 'currentCompany.crunchbaseFundingData')) : '',
+    
+    // Individual Crunchbase Funding Fields
+    'Company Funding Amount': safeGet(profile, 'currentCompany.crunchbaseFundingData.totalFunding') || '',
+    'Funding Round': safeGet(profile, 'currentCompany.crunchbaseFundingData.lastFundingType') || '',
+    'Investor': safeGet(profile, 'currentCompany.crunchbaseFundingData.investors') && Array.isArray(safeGet(profile, 'currentCompany.crunchbaseFundingData.investors')) ? 
+      safeGet(profile, 'currentCompany.crunchbaseFundingData.investors').join(', ') : '',
+    
     'company Current Employe Count': parseInt(safeGet(profile, 'currentCompany.employeeCount')) || 0,
     'Company_Country': safeGet(profile, 'currentCompany.groupedLocations.0.locations.0.address.country') || '',
     'Company_City': safeGet(profile, 'currentCompany.groupedLocations.0.locations.0.address.city') || '',

@@ -22,6 +22,17 @@ let scrapingStats = {
     logs: []
 };
 
+// Global state for tracking post scraping session
+let postScrapingProcess = null;
+let postScrapingStats = {
+    posts: 0,
+    total: 0,
+    errors: 0,
+    processed: 0,
+    completed: false,
+    logs: []
+};
+
 // API Routes
 
 /**
@@ -141,6 +152,183 @@ app.get('/api/status', (req, res) => {
 });
 
 /**
+ * Start post scraping session
+ */
+app.post('/api/start-post-scraping', async (req, res) => {
+    try {
+        const config = req.body;
+        
+        // Validate configuration
+        if (!config.cookies || !config.apifyToken) {
+            return res.status(400).json({ error: 'Missing required configuration' });
+        }
+
+        // Validate environment variables
+        if (!process.env.AIRTABLE_TOKEN) {
+            return res.status(500).json({ error: 'Missing required environment variables: AIRTABLE_TOKEN' });
+        }
+
+        // Reset post scraping stats
+        postScrapingStats = {
+            posts: 0,
+            total: 0,
+            errors: 0,
+            processed: 0,
+            completed: false,
+            logs: []
+        };
+
+        addPostLog('🚀 Starting LinkedIn post scraping process...', 'info');
+        addPostLog('📊 Fetching LinkedIn URLs from Airtable...', 'info');
+
+        // Fetch LinkedIn URLs from Airtable using the specific view
+        const airtableService = require('./services/airtableService');
+        const axios = require('axios');
+        
+        try {
+            // Fetch LinkedIn URLs from the specific view
+            const linkedinUrls = await airtableService.fetchUrlsFromView(
+                process.env.AIRTABLE_TOKEN,
+                process.env.AIRTABLE_BASE_ID,
+                process.env.AIRTABLE_TABLE_NAME,
+                'viweMZlXNZMoyE5kL'
+            );
+
+            if (linkedinUrls.length === 0) {
+                throw new Error('No LinkedIn URLs found in the specified Airtable view');
+            }
+
+            addPostLog(`✅ Found ${linkedinUrls.length} LinkedIn URLs from Airtable`, 'success');
+            postScrapingStats.total = linkedinUrls.length;
+
+            // Construct Apify API URL and payload
+            const apifyUrl = `https://api.apify.com/v2/acts/curious_coder~linkedin-post-search-scraper/run-sync-get-dataset-items?token=${config.apifyToken}`;
+            
+            const apifyPayload = {
+                "cookie": config.cookies,
+                "deepScrape": config.deepScrape || true,
+                "limitPerSource": config.maxPosts || 1,
+                "maxDelay": 8,
+                "minDelay": 2,
+                "proxy": {
+                    "useApifyProxy": true,
+                    "apifyProxyCountry": "US"
+                },
+                "rawData": false,
+                "urls": linkedinUrls
+            };
+
+            addPostLog('📡 Sending request to Apify post scraper...', 'info');
+            addPostLog(`🎯 Processing ${linkedinUrls.length} LinkedIn URLs...`, 'info');
+
+            // Make request to Apify API
+            const response = await axios.post(apifyUrl, apifyPayload, {
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                timeout: 600000 // 10 minutes timeout for large datasets
+            });
+
+            const posts = response.data || [];
+            postScrapingStats.posts = posts.length;
+            postScrapingStats.processed = linkedinUrls.length;
+
+            addPostLog(`✅ Successfully scraped ${posts.length} posts from ${linkedinUrls.length} profiles`, 'success');
+
+            // Save posts back to Airtable
+            if (posts.length > 0) {
+                addPostLog('💾 Saving post data to Airtable...', 'info');
+                
+                let savedCount = 0;
+                for (const post of posts) {
+                    try {
+                        // Map post data to Airtable fields - only the 3 core fields requested
+                        const postData = {
+                            'Post URL': post.url || '',
+                            'Post Text': post.text || '',
+                            'Posted On': post.postedAtISO ? new Date(post.postedAtISO).toISOString().split('T')[0] : (post.date || '')
+                        };
+
+                        // Insert post data into Airtable using service
+                        await airtableService.insertPostData(
+                            postData,
+                            process.env.AIRTABLE_TOKEN,
+                            process.env.AIRTABLE_BASE_ID,
+                            process.env.AIRTABLE_TABLE_NAME
+                        );
+                        
+                        savedCount++;
+                        postScrapingStats.posts = savedCount;
+                        
+                        // Add small delay to respect Airtable rate limits
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                        
+                    } catch (saveError) {
+                        console.error('Error saving post to Airtable:', saveError);
+                        postScrapingStats.errors++;
+                        addPostLog(`❌ Error saving post: ${saveError.message}`, 'error');
+                    }
+                }
+                
+                addPostLog(`✅ Saved ${savedCount} posts to Airtable`, 'success');
+            }
+
+            postScrapingStats.completed = true;
+            addPostLog('🎉 Post scraping completed!', 'success');
+
+            res.json({ 
+                status: 'completed', 
+                message: 'Post scraping completed successfully', 
+                urlsProcessed: linkedinUrls.length,
+                postsScraped: posts.length,
+                postsSaved: savedCount || 0
+            });
+
+        } catch (airtableError) {
+            throw new Error(`Airtable error: ${airtableError.message}`);
+        }
+
+    } catch (error) {
+        console.error('Error starting post scraping:', error);
+        addPostLog(`❌ Error: ${error.message}`, 'error');
+        postScrapingStats.errors++;
+        postScrapingStats.completed = true;
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Stop post scraping session
+ */
+app.post('/api/stop-post-scraping', (req, res) => {
+    if (postScrapingProcess) {
+        postScrapingProcess.kill();
+        postScrapingProcess = null;
+        addPostLog('⏹️ Post scraping process stopped by user', 'info');
+        postScrapingStats.completed = true;
+    }
+    
+    res.json({ status: 'stopped', message: 'Post scraping process stopped' });
+});
+
+/**
+ * Get current post scraping status
+ */
+app.get('/api/post-status', (req, res) => {
+    // Get recent logs (last 10 entries)
+    const recentLogs = postScrapingStats.logs.slice(-10);
+    
+    res.json({
+        ...postScrapingStats,
+        logs: recentLogs,
+        isRunning: postScrapingProcess !== null
+    });
+    
+    // Clear sent logs to avoid duplication
+    postScrapingStats.logs = [];
+});
+
+/**
  * Parse scraping output and update stats
  */
 function parseScrapingOutput(output) {
@@ -209,6 +397,25 @@ function addLog(message, type = 'info') {
     }
     
     console.log(`[${timestamp}] ${message}`);
+}
+
+/**
+ * Add post log entry with timestamp
+ */
+function addPostLog(message, type = 'info') {
+    const timestamp = new Date().toISOString();
+    postScrapingStats.logs.push({
+        timestamp,
+        message,
+        type
+    });
+    
+    // Keep only last 100 logs
+    if (postScrapingStats.logs.length > 100) {
+        postScrapingStats.logs = postScrapingStats.logs.slice(-100);
+    }
+    
+    console.log(`[POST] [${timestamp}] ${message}`);
 }
 
 /**

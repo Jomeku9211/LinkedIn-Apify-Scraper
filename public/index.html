@@ -44,6 +44,42 @@
             opacity: 0.9;
         }
 
+        .tabs {
+            display: flex;
+            background: #f1f3f4;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 15px 20px;
+            background: #f1f3f4;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            transition: background-color 0.3s, color 0.3s;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab:hover {
+            background: #e8eaed;
+        }
+
+        .tab.active {
+            background: white;
+            color: #0077b5;
+            border-bottom-color: #0077b5;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
         .main-content {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -269,13 +305,21 @@
     <div class="container">
         <div class="header">
             <h1>🔍 LinkedIn Scraper Dashboard</h1>
-            <p>Configure and monitor your LinkedIn profile scraping sessions</p>
+            <p>Configure and monitor your LinkedIn scraping sessions</p>
         </div>
 
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('profile-scraper')">👤 Profile Scraper</button>
+            <button class="tab" onclick="showTab('post-scraper')">📄 Post Scraper</button>
+        </div>
+
+        <!-- Profile Scraper Tab -->
+        <div id="profile-scraper" class="tab-content active">
         <div class="main-content">
             <!-- Configuration Panel -->
             <div class="config-panel">
-                <h2 class="panel-title">⚙️ Configuration</h2>
+                <h2 class="panel-title">⚙️ Profile Scraper Configuration</h2>
                 
                 <div class="form-group">
                     <label for="cookies">LinkedIn Cookies (JSON format):</label>
@@ -342,9 +386,79 @@
                 </div>
             </div>
         </div>
+        </div>
+
+        <!-- Post Scraper Tab -->
+        <div id="post-scraper" class="tab-content">
+        <div class="main-content">
+            <!-- Configuration Panel -->
+            <div class="config-panel">
+                <h2 class="panel-title">📄 Post Scraper Configuration</h2>
+                
+                <div class="form-group">
+                    <label for="postCookies">LinkedIn Cookies (JSON format):</label>
+                    <textarea id="postCookies" placeholder='[{"domain": ".linkedin.com", "name": "li_at", "value": "..."}]'></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="postApifyToken">Apify Token:</label>
+                    <input type="text" id="postApifyToken" placeholder="apify_api_xxxxxxxxxxxxxxxxxxxxxxx">
+                </div>
+
+                <div class="form-group">
+                    <label for="maxPosts">Posts per Profile:</label>
+                    <input type="number" id="maxPosts" value="1" min="1" max="10">
+                    <small style="color: #666; font-size: 12px;">Number of latest posts to scrape from each LinkedIn profile</small>
+                </div>
+
+                <button id="startPostBtn" class="start-btn" onclick="startPostScraping()">🚀 Start Scraping</button>
+                <button id="stopPostBtn" class="stop-btn" onclick="stopPostScraping()" style="display: none;">⏹️ Stop Scraping</button>
+            </div>
+
+            <!-- Status Panel -->
+            <div class="status-panel">
+                <h2 class="panel-title">📊 Status & Metrics</h2>
+                
+                <div id="postStatusIndicator" class="status-indicator status-idle">
+                    🔘 Ready to Start
+                </div>
+
+                <div class="timer" id="postTimer">00:00:00</div>
+                
+                <div class="progress-bar">
+                    <div class="progress-fill" id="postProgressFill"></div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="postCount">0</div>
+                        <div class="stat-label">Posts Scraped</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="postSuccessRate">0%</div>
+                        <div class="stat-label">Success Rate</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="postTotal">0</div>
+                        <div class="stat-label">Total Profiles</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="postErrors">0</div>
+                        <div class="stat-label">Errors</div>
+                    </div>
+                </div>
+
+                <h3 style="margin-bottom: 10px; color: #2d3748;">📝 Live Logs</h3>
+                <div class="log-container" id="postLogContainer">
+                    <div class="log-entry log-info">💡 Configure your settings and click "Start Scraping" to begin...</div>
+                </div>
+            </div>
+        </div>
+        </div>
     </div>
 
     <script>
+        // Profile Scraper Variables
         let isRunning = false;
         let startTime = null;
         let timerInterval = null;
@@ -354,6 +468,34 @@
             errors: 0,
             processed: 0
         };
+
+        // Post Scraper Variables
+        let isPostRunning = false;
+        let postStartTime = null;
+        let postTimerInterval = null;
+        let postStats = {
+            posts: 0,
+            total: 0,
+            errors: 0,
+            processed: 0
+        };
+
+        // Tab Management
+        function showTab(tabName) {
+            // Hide all tab contents
+            const tabContents = document.querySelectorAll('.tab-content');
+            tabContents.forEach(content => content.classList.remove('active'));
+            
+            // Remove active class from all tabs
+            const tabs = document.querySelectorAll('.tab');
+            tabs.forEach(tab => tab.classList.remove('active'));
+            
+            // Show selected tab content
+            document.getElementById(tabName).classList.add('active');
+            
+            // Set active tab
+            event.target.classList.add('active');
+        }
 
         // DOM Elements
         const startBtn = document.getElementById('startBtn');
@@ -611,6 +753,189 @@
             } else {
                 addLog('🎉 Demo session completed!', 'success');
                 stopScraping();
+            }
+        }
+
+        // Post Scraper Functions
+        function updatePostStats() {
+            document.getElementById('postCount').textContent = postStats.posts;
+            document.getElementById('postTotal').textContent = postStats.total;
+            document.getElementById('postErrors').textContent = postStats.errors;
+            document.getElementById('postProcessed').textContent = postStats.processed;
+            
+            const progressText = `${postStats.processed}/${postStats.total}`;
+            document.getElementById('postProgressText').textContent = progressText;
+            
+            const progressPercentage = postStats.total > 0 ? (postStats.processed / postStats.total) * 100 : 0;
+            document.getElementById('postProgressFill').style.width = progressPercentage + '%';
+        }
+
+        function updatePostTimer() {
+            if (!postStartTime) return;
+            
+            const elapsed = Date.now() - postStartTime;
+            const hours = Math.floor(elapsed / 3600000);
+            const minutes = Math.floor((elapsed % 3600000) / 60000);
+            const seconds = Math.floor((elapsed % 60000) / 1000);
+            
+            const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            document.getElementById('postTimer').textContent = timeString;
+        }
+
+        function addPostLog(message, type = 'info') {
+            const logContainer = document.getElementById('postLogContainer');
+            const timestamp = new Date().toLocaleTimeString();
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            // Keep only last 100 log entries
+            while (logContainer.children.length > 100) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+
+        function validatePostConfiguration() {
+            const postCookies = document.getElementById('postCookies').value.trim();
+            const postApifyToken = document.getElementById('postApifyToken').value.trim();
+
+            if (!postCookies || !postApifyToken) {
+                addPostLog('❌ Please fill in all required fields: Cookies and Apify Token', 'error');
+                return false;
+            }
+
+            // Validate JSON format for cookies
+            try {
+                JSON.parse(postCookies);
+            } catch (e) {
+                addPostLog('❌ Invalid JSON format for cookies', 'error');
+                return false;
+            }
+
+            return true;
+        }
+
+        async function startPostScraping() {
+            if (!validatePostConfiguration()) {
+                return;
+            }
+
+            isPostRunning = true;
+            postStartTime = Date.now();
+            
+            const startBtn = document.getElementById('startPostBtn');
+            const stopBtn = document.getElementById('stopPostBtn');
+            const statusIndicator = document.getElementById('postStatusIndicator');
+            
+            // Update UI
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'block';
+            statusIndicator.className = 'status-indicator status-running';
+            statusIndicator.textContent = '🔄 Scraping Posts';
+            
+            // Reset stats
+            postStats = { posts: 0, total: 0, errors: 0, processed: 0 };
+            updatePostStats();
+            
+            // Start timer
+            postTimerInterval = setInterval(updatePostTimer, 1000);
+            
+            addPostLog('🚀 Starting LinkedIn post scraping session...', 'info');
+            addPostLog('📊 Validating configuration...', 'info');
+            
+            try {
+                const config = {
+                    cookies: JSON.parse(document.getElementById('postCookies').value),
+                    apifyToken: document.getElementById('postApifyToken').value,
+                    maxPosts: parseInt(document.getElementById('maxPosts').value)
+                };
+
+                addPostLog('✅ Configuration validated successfully', 'success');
+                addPostLog('📡 Fetching LinkedIn URLs from Airtable...', 'info');
+                addPostLog('📡 Starting post scraper backend...', 'info');
+
+                // Start the post scraping process
+                const response = await fetch('/api/start-post-scraping', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+
+                if (response.ok) {
+                    addPostLog('✅ Post scraping started successfully', 'success');
+                    // Start polling for updates
+                    pollPostUpdates();
+                } else {
+                    throw new Error('Failed to start post scraping');
+                }
+
+            } catch (error) {
+                addPostLog(`❌ Error starting post scraper: ${error.message}`, 'error');
+                stopPostScraping();
+            }
+        }
+
+        function stopPostScraping() {
+            isPostRunning = false;
+            
+            const startBtn = document.getElementById('startPostBtn');
+            const stopBtn = document.getElementById('stopPostBtn');
+            const statusIndicator = document.getElementById('postStatusIndicator');
+            
+            // Update UI
+            startBtn.style.display = 'block';
+            stopBtn.style.display = 'none';
+            statusIndicator.className = 'status-indicator status-idle';
+            statusIndicator.textContent = '🔘 Ready to Start';
+            
+            // Stop timer
+            if (postTimerInterval) {
+                clearInterval(postTimerInterval);
+                postTimerInterval = null;
+            }
+            
+            addPostLog('⏹️ Post scraping stopped', 'info');
+        }
+
+        async function pollPostUpdates() {
+            if (!isPostRunning) return;
+            
+            try {
+                const response = await fetch('/api/post-status');
+                const data = await response.json();
+                
+                // Update stats
+                postStats.posts = data.posts || 0;
+                postStats.total = data.total || 0;
+                postStats.errors = data.errors || 0;
+                postStats.processed = data.processed || 0;
+                
+                updatePostStats();
+                
+                // Add new logs
+                if (data.logs && data.logs.length > 0) {
+                    data.logs.forEach(log => {
+                        addPostLog(log.message, log.type);
+                    });
+                }
+                
+                if (data.completed) {
+                    addPostLog('🎉 Post scraping completed!', 'success');
+                    stopPostScraping();
+                } else {
+                    // Continue polling
+                    setTimeout(pollPostUpdates, 2000);
+                }
+                
+            } catch (error) {
+                addPostLog(`❌ Error checking status: ${error.message}`, 'error');
+                setTimeout(pollPostUpdates, 5000); // Retry after 5 seconds
             }
         }
 
