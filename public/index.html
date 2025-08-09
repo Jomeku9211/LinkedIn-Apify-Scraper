@@ -3,8 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LinkedIn Scraper Dashboard</title>
+    <title>Coder-Farm Dashboard</title>
+        <!-- Typography: Google Fonts -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;500;700&family=Poppins:wght@500;600;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --brand-primary: #2C426B;   /* deep blue */
+            --brand-secondary: #8DBAD7; /* light blue */
+            --brand-accent: #F16a24;    /* orange */
+            --gray-100: #f8f9fa;
+            --gray-200: #f1f3f4;
+            --gray-300: #e1e5e9;
+            --gray-600: #6c757d;
+            --text-dark: #2d3748;
+            --success: #28a745;
+            --danger: #dc3545;
+            --page-bg: #f5f5f7;         /* apple-like neutral */
+            --border-soft: rgba(0,0,0,0.08);
+        }
         * {
             margin: 0;
             padding: 0;
@@ -13,7 +31,8 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                font-family: 'Lato', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--page-bg);
             min-height: 100vh;
             padding: 20px;
         }
@@ -21,55 +40,55 @@
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            background: #fff;
+            border-radius: 14px;
+            border: 1px solid var(--border-soft);
+            box-shadow: 0 10px 24px rgba(0,0,0,0.06);
             overflow: hidden;
         }
 
         .header {
-            background: linear-gradient(135deg, #0077b5 0%, #0066cc 100%);
-            color: white;
-            padding: 30px;
+            position: relative;
+            background: #ffffff;
+            color: var(--text-dark);
+            padding: 20px 24px;
             text-align: center;
+            border-bottom: 1px solid var(--border-soft);
         }
 
         .header h1 {
             font-size: 2.5em;
             margin-bottom: 10px;
+                font-family: 'Poppins', sans-serif;
         }
 
-        .header p {
-            font-size: 1.1em;
-            opacity: 0.9;
-        }
+    .header p { font-size: 1em; opacity: 0.7; }
 
         .tabs {
             display: flex;
-            background: #f1f3f4;
-            border-bottom: 1px solid #ddd;
+            background: #fff;
+            border-bottom: 1px solid var(--gray-300);
         }
 
         .tab {
             flex: 1;
             padding: 15px 20px;
-            background: #f1f3f4;
+            background: transparent;
             border: none;
             cursor: pointer;
             font-size: 16px;
+                font-family: 'Poppins', sans-serif;
             font-weight: 500;
-            transition: background-color 0.3s, color 0.3s;
-            border-bottom: 3px solid transparent;
+            transition: color 0.2s, border-color 0.2s;
+            border-bottom: 2px solid transparent;
         }
 
-        .tab:hover {
-            background: #e8eaed;
-        }
+    .tab:hover { color: var(--brand-primary); }
 
         .tab.active {
-            background: white;
-            color: #0077b5;
-            border-bottom-color: #0077b5;
+            background: #fff;
+            color: var(--brand-primary);
+            border-bottom-color: var(--brand-accent);
         }
 
         .tab-content {
@@ -83,20 +102,22 @@
         .main-content {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            padding: 30px;
+            gap: 28px;
+            padding: 28px;
         }
 
         .config-panel {
-            background: #f8f9fa;
+            background: #fff;
+            border: 1px solid var(--gray-300);
             border-radius: 10px;
-            padding: 25px;
+            padding: 22px;
         }
 
         .status-panel {
-            background: #f8f9fa;
+            background: #fff;
+            border: 1px solid var(--gray-300);
             border-radius: 10px;
-            padding: 25px;
+            padding: 22px;
         }
 
         .form-group {
@@ -107,6 +128,7 @@
             display: block;
             margin-bottom: 8px;
             font-weight: 600;
+                font-family: 'Roboto', sans-serif;
             color: #333;
         }
 
@@ -114,16 +136,17 @@
         .form-group textarea {
             width: 100%;
             padding: 12px;
-            border: 2px solid #e1e5e9;
+            border: 2px solid var(--gray-300);
             border-radius: 8px;
             font-size: 14px;
+                font-family: 'Roboto', sans-serif;
             transition: border-color 0.3s;
         }
 
         .form-group input:focus,
         .form-group textarea:focus {
             outline: none;
-            border-color: #0077b5;
+            border-color: var(--brand-primary);
         }
 
         .form-group textarea {
@@ -143,77 +166,71 @@
 
         .start-btn {
             width: 100%;
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            background: var(--brand-accent);
             color: white;
             border: none;
             padding: 15px 25px;
             border-radius: 8px;
             font-size: 16px;
             font-weight: 600;
+                font-family: 'Poppins', sans-serif;
             cursor: pointer;
-            transition: transform 0.2s;
+            transition: background-color 0.2s, opacity 0.2s;
             margin-top: 20px;
         }
 
-        .start-btn:hover {
-            transform: translateY(-2px);
-        }
+    .start-btn:hover { opacity: 0.95; }
 
-        .start-btn:disabled {
-            background: #6c757d;
-            cursor: not-allowed;
-            transform: none;
-        }
+    .start-btn:disabled { background: var(--gray-600); cursor: not-allowed; }
 
         .stop-btn {
             width: 100%;
-            background: linear-gradient(135deg, #dc3545 0%, #e74c3c 100%);
+            background: var(--danger);
             color: white;
             border: none;
             padding: 15px 25px;
             border-radius: 8px;
             font-size: 16px;
             font-weight: 600;
+                font-family: 'Poppins', sans-serif;
             cursor: pointer;
-            transition: transform 0.2s;
+            transition: background-color 0.2s, opacity 0.2s;
             margin-top: 10px;
         }
 
-        .stop-btn:hover {
-            transform: translateY(-2px);
-        }
+    .stop-btn:hover { opacity: 0.95; }
 
         .stats-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-bottom: 25px;
+            gap: 14px;
+            margin-bottom: 22px;
         }
 
         .stat-card {
-            background: white;
-            padding: 20px;
+            background: #fff;
+            padding: 18px;
             border-radius: 10px;
             text-align: center;
-            border: 2px solid #e1e5e9;
+            border: 1px solid var(--gray-300);
         }
 
         .stat-value {
             font-size: 2em;
             font-weight: bold;
-            color: #0077b5;
+            color: var(--brand-primary);
             margin-bottom: 5px;
         }
 
         .stat-label {
-            color: #6c757d;
+            color: var(--gray-600);
             font-size: 0.9em;
         }
 
         .timer {
             font-size: 3em;
             font-weight: bold;
-            color: #28a745;
+            color: var(--success);
             text-align: center;
             margin-bottom: 20px;
         }
@@ -227,49 +244,44 @@
         }
 
         .status-idle {
-            background: #f8f9fa;
-            color: #6c757d;
-            border: 2px solid #e1e5e9;
+            background: var(--gray-100);
+            color: var(--gray-600);
+            border: 2px solid var(--gray-300);
         }
 
         .status-running {
-            background: #d4edda;
-            color: #155724;
-            border: 2px solid #c3e6cb;
+            background: #ffe8d9;
+            color: #7a2e0e;
+            border: 2px solid #ffd0b0;
         }
 
         .log-container {
-            background: #2d3748;
-            color: #e2e8f0;
+            background: #ffffff;
+            color: #1f2937;
             border-radius: 8px;
-            padding: 15px;
-            height: 300px;
+            padding: 14px;
+            height: 280px;
             overflow-y: auto;
+            border: 1px solid var(--border-soft);
             font-family: 'Courier New', monospace;
             font-size: 13px;
-            line-height: 1.4;
+            line-height: 1.45;
         }
 
         .log-entry {
             margin-bottom: 5px;
         }
 
-        .log-success {
-            color: #68d391;
-        }
+    .log-success { color: #256c2e; }
 
-        .log-error {
-            color: #fc8181;
-        }
+    .log-error { color: #b42318; }
 
-        .log-info {
-            color: #63b3ed;
-        }
+    .log-info { color: #1d4ed8; }
 
         .progress-bar {
             width: 100%;
-            height: 10px;
-            background: #e1e5e9;
+            height: 6px;
+            background: var(--gray-300);
             border-radius: 5px;
             overflow: hidden;
             margin-bottom: 15px;
@@ -277,18 +289,35 @@
 
         .progress-fill {
             height: 100%;
-            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            background: linear-gradient(135deg, var(--brand-accent) 0%, #d85e1f 100%);
             transition: width 0.3s ease;
             width: 0%;
         }
 
         .panel-title {
-            font-size: 1.4em;
-            margin-bottom: 20px;
-            color: #2d3748;
-            border-bottom: 2px solid #e1e5e9;
-            padding-bottom: 10px;
+            font-size: 1.25em;
+            margin-bottom: 16px;
+            color: var(--text-dark);
+            border-bottom: 1px solid var(--gray-300);
+            padding-bottom: 8px;
+                font-family: 'Poppins', sans-serif;
+            font-weight: 600;
         }
+
+        .logout-btn {
+            position: absolute;
+            right: 20px;
+            top: 16px;
+            background: #ffffff;
+            color: var(--text-dark);
+            border: 1px solid var(--border-soft);
+            padding: 8px 14px;
+            border-radius: 999px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+        .logout-btn:hover { box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
 
         @media (max-width: 768px) {
             .main-content {
@@ -304,7 +333,9 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔍 LinkedIn Scraper Dashboard</h1>
+            <button class="logout-btn" id="logoutBtn" title="Logout">Logout</button>
+            <button class="logout-btn" id="clearConfigBtn" title="Clear saved configuration" style="right: 110px;">Clear Config</button>
+            <h1>🔍 Coderfarm Dashboard</h1>
             <p>Configure and monitor your LinkedIn scraping sessions</p>
         </div>
 
@@ -324,17 +355,17 @@
                 
                 <div class="form-group">
                     <label for="cookies">LinkedIn Cookies (JSON format):</label>
-                    <textarea id="cookies" placeholder='[{"domain": ".linkedin.com", "name": "li_at", "value": "..."}]'></textarea>
+                    <textarea id="cookies" placeholder="Enter cookies JSON" autocomplete="off"></textarea>
                 </div>
 
                 <div class="form-group">
                     <label for="apifyToken">Apify API Token:</label>
-                    <input type="text" id="apifyToken" placeholder="apify_api_xxx">
+                    <input type="text" id="apifyToken" placeholder="Enter Apify Token" autocomplete="off">
                 </div>
 
                 <div class="form-group">
                     <label for="contactCompassToken">Contact Compass Token:</label>
-                    <input type="text" id="contactCompassToken" placeholder="your_contact_compass_token">
+                    <input type="text" id="contactCompassToken" placeholder="Enter Contact Compass Token" autocomplete="off">
                 </div>
 
                 <div class="form-group">
@@ -398,12 +429,12 @@
                 
                 <div class="form-group">
                     <label for="postCookies">LinkedIn Cookies (JSON format):</label>
-                    <textarea id="postCookies" placeholder='[{"domain": ".linkedin.com", "name": "li_at", "value": "..."}]'></textarea>
+                    <textarea id="postCookies" placeholder="Enter cookies JSON" autocomplete="off"></textarea>
                 </div>
 
                 <div class="form-group">
                     <label for="postApifyToken">Apify Token:</label>
-                    <input type="text" id="postApifyToken" placeholder="apify_api_xxxxxxxxxxxxxxxxxxxxxxx">
+                    <input type="text" id="postApifyToken" placeholder="Enter Apify Token" autocomplete="off">
                 </div>
 
                 <div class="form-group">
@@ -508,6 +539,25 @@
     </div>
 
     <script>
+        // Logout handler
+        document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+            try {
+                // Clear any saved configuration to avoid residual private data
+                localStorage.removeItem('linkedinScraperConfig');
+                await fetch('/logout', { method: 'POST' });
+                window.location.href = '/login';
+            } catch (e) {
+                console.error('Logout failed', e);
+            }
+        });
+        // Clear config handler
+        document.getElementById('clearConfigBtn')?.addEventListener('click', () => {
+            localStorage.removeItem('linkedinScraperConfig');
+            // Clear fields to show placeholders
+            document.getElementById('cookies').value = '';
+            document.getElementById('apifyToken').value = '';
+            document.getElementById('contactCompassToken').value = '';
+        });
         // Profile Scraper Variables
         let isRunning = false;
         let startTime = null;
