@@ -1,4 +1,4 @@
-const { mapApifyToAirtable } = require('./utils/apifyDataMapper');
+const { mapApifyToAirtable } = require('./src/utils/apifyDataMapper');
 
 // New LinkedIn profile structure from user
 const newProfileData = [

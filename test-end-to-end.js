@@ -1,9 +1,9 @@
 require('dotenv').config();
 
 const fs = require('fs');
-const profileScraper = require('./scrapers/profileScraper');
-const airtableService = require('./services/airtableService');
-const { mapApifyResponseToAirtable, validateAirtableData } = require('./utils/apifyDataMapper');
+const profileScraper = require('./src/scrapers/profileScraper');
+const airtableService = require('./src/services/airtableService');
+const { mapApifyResponseToAirtable, validateAirtableData } = require('./src/utils/apifyDataMapper');
 
 // Configuration
 const APIFY_PROFILE_TOKEN = process.env.APIFY_PROFILE_TOKEN;
