@@ -38,9 +38,33 @@ async function processProfile(profileUrl, index, total) {
       CONTACT_COMPASS_TOKEN
     );
     
+    // Map profile data to Airtable fields
+    const airtableData = {
+      'Name': profileData.name || '',
+      'LinkedIn URL': profileUrl,
+      'Headline': profileData.headline || '',
+      'First Name': profileData.contactInfo?.first_name || '',
+      'Last Name': profileData.contactInfo?.last_name || '',
+      'Email': profileData.contactInfo?.email || '',
+      'Phone': profileData.contactInfo?.phone_number || '',
+      'Company': profileData.company?.name || profileData.contactInfo?.company_name || '',
+      'Title': profileData.contactInfo?.title || '',
+      'Location': profileData.contactInfo?.city || '',
+      'Country': profileData.contactInfo?.country || '',
+      'Connections': profileData.connectionsCount || 0,
+      'Followers': profileData.followersCount || 0,
+      'Profile Summary': profileData.summary || '',
+      'Company Website': profileData.company?.websiteUrl || '',
+      'Company Description': profileData.company?.description || '',
+      'Company Industry': profileData.company?.industries?.[0]?.name || '',
+      'Company Size': profileData.company?.employeeCountRange ? 
+        `${profileData.company.employeeCountRange.start}-${profileData.company.employeeCountRange.end}` : '',
+      'Scraped Date': new Date().toISOString()
+    };
+    
     // Insert profile data into Airtable
     await airtableService.insertRecord(
-      profileData,
+      airtableData,
       AIRTABLE_TOKEN, 
       AIRTABLE_BASE_ID, 
       AIRTABLE_TABLE_NAME
@@ -51,20 +75,27 @@ async function processProfile(profileUrl, index, total) {
   } catch (error) {
     console.error(`❌ Error processing profile ${index + 1}/${total}:`, error.message);
     
-    await webhookService.triggerWebhook({
+    // Prepare enhanced error details for webhook
+    const errorDetails = {
       type: 'profile_processing_error',
       profileUrl,
       index: index + 1,
       total,
       error: error.message,
+      apifyErrorType: error.apifyError?.type || null,
+      apifyErrorMessage: error.apifyError?.message || null,
+      httpStatus: error.status || null,
       errorDetails: {
         message: error.message,
         stack: error.stack,
         timestamp: new Date().toISOString(),
         scraper: 'profile',
-        actor: 'curious_coder~linkedin-post-search-scraper'
+        actor: 'curious_coder~linkedin-post-search-scraper',
+        apifyError: error.apifyError || null
       }
-    }, WEBHOOK_URL);
+    };
+    
+    await webhookService.triggerWebhook(errorDetails, WEBHOOK_URL);
   }
 }
 

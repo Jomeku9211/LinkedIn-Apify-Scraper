@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 // Configuration
-const PROFILE_SCRAPER_ACTOR = 'curious_coder~linkedin-post-search-scraper';
+const PROFILE_SCRAPER_ACTOR = 'curious_coder~linkedin-profile-scraper';
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 5000; // 5 seconds
 
@@ -37,14 +37,51 @@ async function runProfileScraper(input, apiToken, retryCount = 0) {
   } catch (error) {
     console.error(`❌ Error running profile scraper:`, error.message);
     
+    // Log detailed error information
+    if (error.response) {
+      console.error('❌ Response status:', error.response.status);
+      console.error('❌ Response headers:', JSON.stringify(error.response.headers, null, 2));
+      console.error('❌ Response data:', JSON.stringify(error.response.data, null, 2));
+    }
+    
     if (retryCount < MAX_RETRIES) {
       console.log(`⏳ Retrying in ${RETRY_DELAY / 1000} seconds...`);
       await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
       return runProfileScraper(input, apiToken, retryCount + 1);
     }
     
-    throw error;
+    // Create enhanced error object with Apify response details
+    const enhancedError = {
+      message: error.message,
+      status: error.response?.status,
+      apifyError: error.response?.data?.error || null
+    };
+    
+    throw enhancedError;
   }
+}
+
+/**
+ * Extract company URL from LinkedIn profile data
+ */
+function extractCompanyUrl(profileData) {
+  // Look for company URL in various possible fields
+  if (profileData.experiences && profileData.experiences.length > 0) {
+    const currentJob = profileData.experiences[0];
+    if (currentJob.companyUrl) {
+      return currentJob.companyUrl;
+    }
+    if (currentJob.company) {
+      // Try to construct LinkedIn company URL from company name
+      const companySlug = currentJob.company.toLowerCase()
+        .replace(/[^a-z0-9]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+      return `https://www.linkedin.com/company/${companySlug}`;
+    }
+  }
+  
+  return null;
 }
 
 /**
@@ -62,8 +99,8 @@ async function scrapeProfile(profileUrl, linkedinCookies, apifyToken, contactCom
       "useApifyProxy": true,
       "apifyProxyCountry": "US"
     },
-    "scrapeCompany": false, // Only scrape profile, not company
-    "urls": [profileUrl]
+    "scrapeCompany": true,
+    "urls": [profileUrl]  // Use simple URL array format as required by actor
   };
   
   console.log('🔧 Profile scraper input constructed with:');
@@ -74,10 +111,14 @@ async function scrapeProfile(profileUrl, linkedinCookies, apifyToken, contactCom
   console.log('- Scrape company:', input.scrapeCompany);
   console.log('- Proxy config:', input.proxy);
   
+  // Log the full input for debugging
+  console.log('🔍 Full input payload:', JSON.stringify(input, null, 2));
+  
   return await runProfileScraper(input, apifyToken);
 }
 
 module.exports = {
   runProfileScraper,
+  extractCompanyUrl,
   scrapeProfile
 };

@@ -7,11 +7,16 @@ async function triggerWebhook(errorDetails, webhookUrl) {
   try {
     console.log('🚨 Triggering error webhook...');
     
-    await axios.post(webhookUrl, {
-      timestamp: new Date().toISOString(),
-      error: errorDetails,
-      source: 'linkedin-scraper'
-    }, {
+    // Extract the apify error message
+    const apifyErrorMessage = errorDetails.apifyErrorMessage || errorDetails.error || 'Unknown error';
+    
+    // Add query parameter to webhook URL
+    const separator = webhookUrl.includes('?') ? '&' : '?';
+    const webhookUrlWithParams = `${webhookUrl}${separator}apifyErrorMessage=${encodeURIComponent(apifyErrorMessage)}`;
+    
+    console.log('📤 Webhook URL with params:', webhookUrlWithParams);
+    
+    await axios.post(webhookUrlWithParams, {}, {
       headers: {
         'Content-Type': 'application/json'
       }
