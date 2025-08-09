@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const path = require('path');
 const { exec, spawn } = require('child_process');
 const fs = require('fs');
@@ -11,6 +12,62 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser(process.env.SESSION_SECRET || 'change-me'));
+
+// Simple auth middleware with signed cookie
+const AUTH_USER = 'krishna';
+const AUTH_PASS = 'maruti';
+const LOGIN_PATHS = new Set(['/login', '/logout', '/public/login.html']);
+
+function isAuthed(req) {
+    try {
+        return req.signedCookies && req.signedCookies.auth === 'ok';
+    } catch {
+        return false;
+    }
+}
+
+// Public: login and static login page
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/login.html'));
+});
+
+app.post('/login', (req, res) => {
+    const { username, password } = req.body || {};
+    if (username === AUTH_USER && password === AUTH_PASS) {
+        res.cookie('auth', 'ok', { httpOnly: true, sameSite: 'lax', signed: true, secure: false, maxAge: 1000 * 60 * 60 * 8 });
+        return res.redirect('/');
+    }
+    return res.redirect('/login?error=1');
+});
+
+app.post('/logout', (req, res) => {
+    res.clearCookie('auth');
+    res.redirect('/login');
+});
+
+// Protect everything else (APIs and static dashboard) except login
+app.use((req, res, next) => {
+    if (LOGIN_PATHS.has(req.path) || req.path.startsWith('/public/login')) return next();
+    if (isAuthed(req)) return next();
+    // Allow static assets needed by login page
+    if (req.path.startsWith('/favicon') || req.path.startsWith('/robots.txt')) return next();
+    return res.redirect('/login');
+});
+
+// Serve static after auth guard to protect dashboard
+// Light cache control: disable cache for HTML so UI updates are visible immediately
+app.use((req, res, next) => {
+    if (req.method === 'GET') {
+        if (req.path === '/' || req.path.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-store');
+        } else if (/(\.css|\.js|\.png|\.jpg|\.svg|\.ico)$/i.test(req.path)) {
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+        }
+    }
+    next();
+});
 app.use(express.static(path.join(__dirname, '../public')));
 
 // Global state for tracking scraping session
@@ -47,6 +104,11 @@ let chatgptStats = {
 };
 
 // API Routes
+
+// Root - send to dashboard (index.html). Auth is enforced by the guard above.
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '../public/index.html'));
+});
 
 /**
  * Start scraping session
@@ -609,12 +671,7 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-/**
- * Serve the main dashboard
- */
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+// (duplicate root route removed)
 
 // Error handling middleware
 app.use((error, req, res, next) => {

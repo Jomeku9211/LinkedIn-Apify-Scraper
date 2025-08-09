@@ -23,6 +23,7 @@
     "axios": "^1.7.2",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
+  "cookie-parser": "^1.4.7",
     "openai": "^5.12.2",
     "papaparse": "^5.4.1"
   },
