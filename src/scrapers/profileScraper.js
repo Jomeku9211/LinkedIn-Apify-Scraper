@@ -117,12 +117,6 @@ async function scrapeProfile(profileUrl, linkedinCookies, apifyToken, contactCom
   return await runProfileScraper(input, apifyToken);
 }
 
-// Ensure CommonJS exports work reliably
-exports.runProfileScraper = runProfileScraper;
-exports.extractCompanyUrl = extractCompanyUrl;
-exports.scrapeProfile = scrapeProfile;
-
-// Also assign to module.exports for consumers expecting a default object
 module.exports = {
   runProfileScraper,
   extractCompanyUrl,
