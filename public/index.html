@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkedIn Scraper Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #0077b5 0%, #0066cc 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 30px;
+        }
+
+        .config-panel {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 25px;
+        }
+
+        .status-panel {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 25px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #0077b5;
+        }
+
+        .form-group textarea {
+            height: 120px;
+            resize: vertical;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+        }
+
+        .start-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            border: none;
+            padding: 15px 25px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-top: 20px;
+        }
+
+        .start-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .start-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .stop-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #dc3545 0%, #e74c3c 100%);
+            color: white;
+            border: none;
+            padding: 15px 25px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-top: 10px;
+        }
+
+        .stop-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            border: 2px solid #e1e5e9;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #0077b5;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+
+        .timer {
+            font-size: 3em;
+            font-weight: bold;
+            color: #28a745;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .status-indicator {
+            padding: 10px 20px;
+            border-radius: 25px;
+            text-align: center;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .status-idle {
+            background: #f8f9fa;
+            color: #6c757d;
+            border: 2px solid #e1e5e9;
+        }
+
+        .status-running {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #c3e6cb;
+        }
+
+        .log-container {
+            background: #2d3748;
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+        }
+
+        .log-success {
+            color: #68d391;
+        }
+
+        .log-error {
+            color: #fc8181;
+        }
+
+        .log-info {
+            color: #63b3ed;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 10px;
+            background: #e1e5e9;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .panel-title {
+            font-size: 1.4em;
+            margin-bottom: 20px;
+            color: #2d3748;
+            border-bottom: 2px solid #e1e5e9;
+            padding-bottom: 10px;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 LinkedIn Scraper Dashboard</h1>
+            <p>Configure and monitor your LinkedIn profile scraping sessions</p>
+        </div>
+
+        <div class="main-content">
+            <!-- Configuration Panel -->
+            <div class="config-panel">
+                <h2 class="panel-title">⚙️ Configuration</h2>
+                
+                <div class="form-group">
+                    <label for="cookies">LinkedIn Cookies (JSON format):</label>
+                    <textarea id="cookies" placeholder='[{"domain": ".linkedin.com", "name": "li_at", "value": "..."}]'></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="apifyToken">Apify API Token:</label>
+                    <input type="text" id="apifyToken" placeholder="apify_api_xxx">
+                </div>
+
+                <div class="form-group">
+                    <label for="contactCompassToken">Contact Compass Token:</label>
+                    <input type="text" id="contactCompassToken" placeholder="your_contact_compass_token">
+                </div>
+
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="findEmail" checked>
+                        <label for="findEmail">Find Email Addresses</label>
+                    </div>
+                </div>
+
+                <button id="startBtn" class="start-btn">🚀 Start Scraping</button>
+                <button id="stopBtn" class="stop-btn" style="display: none;">⏹️ Stop Scraping</button>
+            </div>
+
+            <!-- Status Panel -->
+            <div class="status-panel">
+                <h2 class="panel-title">📊 Status & Metrics</h2>
+                
+                <div id="statusIndicator" class="status-indicator status-idle">
+                    🔘 Ready to Start
+                </div>
+
+                <div class="timer" id="timer">00:00:00</div>
+                
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="leadsCount">0</div>
+                        <div class="stat-label">Leads Scraped</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="successRate">0%</div>
+                        <div class="stat-label">Success Rate</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalProfiles">0</div>
+                        <div class="stat-label">Total Profiles</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="errorCount">0</div>
+                        <div class="stat-label">Errors</div>
+                    </div>
+                </div>
+
+                <h3 style="margin-bottom: 10px; color: #2d3748;">📝 Live Logs</h3>
+                <div class="log-container" id="logContainer">
+                    <div class="log-entry log-info">💡 Configure your settings and click "Start Scraping" to begin...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isRunning = false;
+        let startTime = null;
+        let timerInterval = null;
+        let stats = {
+            leads: 0,
+            total: 0,
+            errors: 0,
+            processed: 0
+        };
+
+        // DOM Elements
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const timer = document.getElementById('timer');
+        const logContainer = document.getElementById('logContainer');
+        const leadsCount = document.getElementById('leadsCount');
+        const successRate = document.getElementById('successRate');
+        const totalProfiles = document.getElementById('totalProfiles');
+        const errorCount = document.getElementById('errorCount');
+        const progressFill = document.getElementById('progressFill');
+
+        // Configuration inputs
+        const cookiesInput = document.getElementById('cookies');
+        const apifyTokenInput = document.getElementById('apifyToken');
+        const contactCompassTokenInput = document.getElementById('contactCompassToken');
+        const findEmailCheckbox = document.getElementById('findEmail');
+
+        // Load saved configuration
+        loadConfiguration();
+
+        // Event Listeners
+        startBtn.addEventListener('click', startScraping);
+        stopBtn.addEventListener('click', stopScraping);
+
+        // Save configuration on input change
+        [cookiesInput, apifyTokenInput, contactCompassTokenInput].forEach(input => {
+            input.addEventListener('change', saveConfiguration);
+        });
+
+        function loadConfiguration() {
+            const config = JSON.parse(localStorage.getItem('linkedinScraperConfig') || '{}');
+            
+            if (config.cookies) cookiesInput.value = config.cookies;
+            if (config.apifyToken) apifyTokenInput.value = config.apifyToken;
+            if (config.contactCompassToken) contactCompassTokenInput.value = config.contactCompassToken;
+            if (config.findEmail !== undefined) findEmailCheckbox.checked = config.findEmail;
+        }
+
+        function saveConfiguration() {
+            const config = {
+                cookies: cookiesInput.value,
+                apifyToken: apifyTokenInput.value,
+                contactCompassToken: contactCompassTokenInput.value,
+                findEmail: findEmailCheckbox.checked
+            };
+            
+            localStorage.setItem('linkedinScraperConfig', JSON.stringify(config));
+        }
+
+        function validateConfiguration() {
+            const required = [
+                { field: cookiesInput, name: 'LinkedIn Cookies' },
+                { field: apifyTokenInput, name: 'Apify Token' },
+                { field: contactCompassTokenInput, name: 'Contact Compass Token' }
+            ];
+
+            for (const item of required) {
+                if (!item.field.value.trim()) {
+                    addLog(`❌ ${item.name} is required`, 'error');
+                    return false;
+                }
+            }
+
+            // Validate JSON format for cookies
+            try {
+                JSON.parse(cookiesInput.value);
+            } catch (e) {
+                addLog('❌ Invalid JSON format for cookies', 'error');
+                return false;
+            }
+
+            return true;
+        }
+
+        async function startScraping() {
+            if (!validateConfiguration()) {
+                return;
+            }
+
+            saveConfiguration();
+            isRunning = true;
+            startTime = Date.now();
+            
+            // Update UI
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'block';
+            statusIndicator.className = 'status-indicator status-running';
+            statusIndicator.textContent = '🔄 Scraping in Progress';
+            
+            // Reset stats
+            stats = { leads: 0, total: 0, errors: 0, processed: 0 };
+            updateStats();
+            
+            // Start timer
+            timerInterval = setInterval(updateTimer, 1000);
+            
+            addLog('🚀 Starting LinkedIn scraping session...', 'info');
+            addLog('📊 Validating configuration...', 'info');
+            
+            try {
+                // Send configuration to backend
+                const config = {
+                    cookies: JSON.parse(cookiesInput.value),
+                    apifyToken: apifyTokenInput.value,
+                    contactCompassToken: contactCompassTokenInput.value,
+                    findEmail: findEmailCheckbox.checked
+                };
+
+                addLog('✅ Configuration validated successfully', 'success');
+                addLog('📡 Starting scraper backend...', 'info');
+
+                // Start the scraping process
+                const response = await fetch('/api/start-scraping', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+
+                if (response.ok) {
+                    addLog('✅ Scraping started successfully', 'success');
+                    // Start polling for updates
+                    pollUpdates();
+                } else {
+                    throw new Error('Failed to start scraping');
+                }
+
+            } catch (error) {
+                addLog(`❌ Error starting scraper: ${error.message}`, 'error');
+                stopScraping();
+            }
+        }
+
+        function stopScraping() {
+            isRunning = false;
+            
+            // Update UI
+            startBtn.style.display = 'block';
+            stopBtn.style.display = 'none';
+            statusIndicator.className = 'status-indicator status-idle';
+            statusIndicator.textContent = '⏹️ Stopped';
+            
+            // Stop timer
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            
+            addLog('⏹️ Scraping session stopped', 'info');
+            
+            // Stop backend process
+            fetch('/api/stop-scraping', { method: 'POST' }).catch(console.error);
+        }
+
+        async function pollUpdates() {
+            if (!isRunning) return;
+
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                // Update stats
+                stats.leads = data.leads || 0;
+                stats.total = data.total || 0;
+                stats.errors = data.errors || 0;
+                stats.processed = data.processed || 0;
+                
+                updateStats();
+                
+                // Add new logs
+                if (data.logs && data.logs.length > 0) {
+                    data.logs.forEach(log => {
+                        addLog(log.message, log.type);
+                    });
+                }
+                
+                // Check if completed
+                if (data.completed) {
+                    addLog('🎉 Scraping session completed successfully!', 'success');
+                    stopScraping();
+                    return;
+                }
+                
+            } catch (error) {
+                console.error('Error polling updates:', error);
+            }
+            
+            // Continue polling
+            setTimeout(pollUpdates, 2000);
+        }
+
+        function updateTimer() {
+            if (!startTime) return;
+            
+            const elapsed = Date.now() - startTime;
+            const seconds = Math.floor((elapsed / 1000) % 60);
+            const minutes = Math.floor((elapsed / (1000 * 60)) % 60);
+            const hours = Math.floor(elapsed / (1000 * 60 * 60));
+            
+            timer.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        function updateStats() {
+            leadsCount.textContent = stats.leads;
+            totalProfiles.textContent = stats.total;
+            errorCount.textContent = stats.errors;
+            
+            const successRate = stats.total > 0 ? Math.round(((stats.leads / stats.total) * 100)) : 0;
+            document.getElementById('successRate').textContent = `${successRate}%`;
+            
+            const progress = stats.total > 0 ? (stats.processed / stats.total) * 100 : 0;
+            progressFill.style.width = `${progress}%`;
+        }
+
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            // Keep only last 100 log entries
+            while (logContainer.children.length > 100) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+
+        // Simulate some demo activity for testing
+        function simulateDemo() {
+            if (!isRunning) return;
+            
+            // Simulate progress
+            stats.total = 10;
+            stats.processed = Math.min(stats.processed + 1, stats.total);
+            stats.leads = Math.floor(stats.processed * 0.8);
+            stats.errors = Math.floor(stats.processed * 0.1);
+            
+            updateStats();
+            
+            addLog(`📊 Processing profile ${stats.processed}/${stats.total}...`, 'info');
+            
+            if (Math.random() > 0.8) {
+                addLog('✅ Profile scraped successfully', 'success');
+            } else if (Math.random() > 0.9) {
+                addLog('❌ Error processing profile', 'error');
+            }
+            
+            if (stats.processed < stats.total) {
+                setTimeout(simulateDemo, 3000);
+            } else {
+                addLog('🎉 Demo session completed!', 'success');
+                stopScraping();
+            }
+        }
+
+        // Add demo mode for testing
+        addLog('💡 Demo mode: Click "Start Scraping" to see the interface in action', 'info');
+    </script>
+</body>
+</html>
