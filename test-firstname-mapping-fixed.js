@@ -5,24 +5,8 @@ const airtableService = require('./services/airtableService');
 // Configuration
 const AIRTABLE_TOKEN = process.env.AIRTABLE_TOKEN;
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || 'appD9VxZrOhiQY9VB';
-const AIRTABLE_TABLE_NAME = process.env.AIRTABLE_TABLE_N    console.log('\n📋 Total Field Mappings: 32 fields mapped successfully!');
-    
-    console.log('\n💾 Inserting test record to Airtable...');
-    
-    const result = await airtableService.insertRecord(
-      mappedData,
-      AIRTABLE_TOKEN, 
-      AIRTABLE_BASE_ID, 
-      AIRTABLE_TABLE_NAME
-    );
-    
-    console.log('\n✅ SUCCESS! firstName + lastName + occupation + pictureUrl mapping works perfectly!');
-    console.log(`📝 Created record: ${result.id}`);
-    console.log(`🌐 View at: https://airtable.com/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}/${result.id}`);
-    
-    return result;hMPmCt87ORo3t';
+const AIRTABLE_TABLE_NAME = process.env.AIRTABLE_TABLE_NAME || 'tblyhMPmCt87ORo3t';
 
-// Sample Apify data (like what we get from the scraper)
 // Sample Apify data (like what we get from the scraper)
 const sampleApifyData = {
   "firstName": "Dheeraj",
@@ -173,7 +157,6 @@ async function testFirstNameMapping() {
   console.log('🧪 Testing comprehensive mapping from Apify to Airtable...\n');
   
   try {
-    // Comprehensive mapping test 
     // Map the Apify data to Airtable format
     const mappedData = {
       // Basic profile info
@@ -232,81 +215,40 @@ async function testFirstNameMapping() {
       "Prospect_Country": sampleApifyData.contactInfo ? sampleApifyData.contactInfo.country : null
     };
     
-    console.log('📊 Mapping Test:');
-    console.log(`   Apify field: "firstName" = "${sampleApifyData.firstName}"`);
-    console.log(`   Airtable field: "firstName" = "${mappedData.firstName}"`);
-    console.log(`   Apify field: "lastName" = "${sampleApifyData.lastName}"`);
-    console.log(`   Airtable field: "lastName" = "${mappedData.lastName}"`);
-    console.log(`   Apify field: "occupation" = "${sampleApifyData.occupation.substring(0, 50)}..."`);
-    console.log(`   Airtable field: "Linkedin Headline" = "${mappedData["Linkedin Headline"].substring(0, 50)}..."`);
-    console.log(`   Apify field: "summary" = "${sampleApifyData.summary.substring(0, 80)}..."`);
-    console.log(`   Airtable field: "about" = "${mappedData.about.substring(0, 80)}..."`);
-    console.log(`   Apify field: "linkedin_url" = "${sampleApifyData.linkedin_url}"`);
-    console.log(`   Airtable field: "linkedinUrl" = "${mappedData.linkedinUrl}"`);
-    console.log(`   Apify field: "twitter_url" = "${sampleApifyData.twitter_url}"`);
-    console.log(`   Airtable field: "twitter_url" = "${mappedData.twitter_url}"`);
-    console.log(`   Apify field: "followersCount" = "${sampleApifyData.followersCount}"`);
-    console.log(`   Airtable field: "followersCunt" = "${mappedData.followersCunt}"`);
-    console.log(`   Apify field: "pictureUrl" = "${sampleApifyData.pictureUrl.substring(0, 60)}..."`);
-    console.log(`   Airtable field: "picture" = "${mappedData.picture.substring(0, 60)}..."`);
-    console.log(`   Apify field: "skills" = [${sampleApifyData.skills.length} skills array]`);
-    console.log(`   Airtable field: "skills" = "${mappedData.skills}"`);
-    console.log(`   Apify field: "educations[0]" = "${sampleApifyData.educations[0].degreeName} in ${sampleApifyData.educations[0].fieldOfStudy} from ${sampleApifyData.educations[0].schoolName}"`);
-    console.log(`   Airtable field: "school" = "${mappedData.school}"`);
-    console.log(`   Apify field: "certifications" = [${sampleApifyData.certifications.length} certifications array]`);
-    console.log(`   Airtable field: "certification" = "${mappedData.certification.substring(0, 100)}..."`);
-    console.log(`   Apify field: "honors" = [${sampleApifyData.honors.length} honors array]`);
-    console.log(`   Airtable field: "honors" = "${mappedData.honors.substring(0, 100)}..."`);
-    console.log(`   Apify field: "positions[0].title" = "${sampleApifyData.positions[0].title}"`);
-    console.log(`   Airtable field: "Current_Position_Title" = "${mappedData["Current_Position_Title"]}"`);
-    console.log(`   Apify field: "companyName" = "${sampleApifyData.companyName}"`);
-    console.log(`   Airtable field: "companyName" = "${mappedData.companyName}"`);
-    console.log(`   Apify field: "companyLinkedinUrl" = "${sampleApifyData.companyLinkedinUrl}"`);
-    console.log(`   Airtable field: "companyLinkedinUrl" = "${mappedData.companyLinkedinUrl}"`);
-    console.log(`   Apify field: "industryName" = "${sampleApifyData.industryName}"`);
-    console.log(`   Airtable field: "companyIndustry" = "${mappedData.companyIndustry}"`);
-    console.log(`   Apify field: "currentCompany.specialities" = [${sampleApifyData.currentCompany.specialities.length} specialities array]`);
-    console.log(`   Airtable field: "companySpecilities" = "${mappedData.companySpecilities}"`);
-    console.log(`   Apify field: "currentCompany.tagline" = "${sampleApifyData.currentCompany.tagline}"`);
-    console.log(`   Airtable field: "companyTagline" = "${mappedData.companyTagline}"`);
-    console.log(`   Apify field: "currentCompany.description" = "${sampleApifyData.currentCompany.description.substring(0, 60)}..."`);
-    console.log(`   Airtable field: "companyDescription" = "${mappedData.companyDescription.substring(0, 60)}..."`);
-    console.log(`   Apify field: "currentCompany.foundedOn.year" = "${sampleApifyData.currentCompany.foundedOn.year}"`);
-    console.log(`   Airtable field: "foundedOn" = "${mappedData.foundedOn}"`);
-    console.log(`   Apify field: "currentCompany.crunchbaseFundingData" = [funding data object]`);
-    console.log(`   Airtable field: "Company Funding" = "${mappedData["Company Funding"].substring(0, 80)}..."`);
-    console.log(`   Apify field: "currentCompany.groupedLocations[0].locations[0].address.city" = "${sampleApifyData.currentCompany.groupedLocations[0].locations[0].address.city}"`);
-    console.log(`   Airtable field: "Company_City" = "${mappedData.Company_City}"`);
-    console.log(`   Apify field: "currentCompany.groupedLocations[0].locations[0].address.country" = "${sampleApifyData.currentCompany.groupedLocations[0].locations[0].address.country}"`);
-    console.log(`   Airtable field: "Company_Country" = "${mappedData.Company_Country}"`);
-    console.log(`   Apify field: "currentCompany.phone" = "${sampleApifyData.currentCompany.phone.extension}+${sampleApifyData.currentCompany.phone.number}"`);
-    console.log(`   Airtable field: "Company_phone" = "${mappedData.Company_phone}"`);
-    console.log(`   Apify field: "currentCompany.employeeCount" = "${sampleApifyData.currentCompany.employeeCount}"`);
-    console.log(`   Airtable field: "company Current Employe Count" = "${mappedData["company Current Employe Count"]}"`);
-    console.log(`   Apify field: "currentCompany.employeeCountRange" = "${sampleApifyData.currentCompany.employeeCountRange.start} - ${sampleApifyData.currentCompany.employeeCountRange.end}"`);
-    console.log(`   Airtable field: "companySize" = "${mappedData.companySize}"`);
-    console.log(`   Apify field: "currentCompany.websiteURL" = "${sampleApifyData.currentCompany?.websiteURL || 'N/A'}"`);
-    console.log(`   Airtable field: "website" = "${mappedData.website}"`);
-    console.log(`   Apify field: "currentCompany.industries[0].name" = "${sampleApifyData.currentCompany?.industries?.[0]?.name || 'N/A'}"`);
-    console.log(`   Airtable field: "companyIndustry" = "${mappedData.companyIndustry}"`);
-    console.log(`   Apify field: "contactInfo.email" = "${sampleApifyData.contactInfo.email}"`);
-    console.log(`   Airtable field: "email" = "${mappedData.email}"`);
-    console.log(`   Apify field: "contactInfo.city" = "${sampleApifyData.contactInfo.city}"`);
-    console.log(`   Airtable field: "Prospect_City" = "${mappedData["Prospect_City"]}"`);
-    console.log(`   Apify field: "contactInfo.country" = "${sampleApifyData.contactInfo.country}"`);
-    console.log(`   Airtable field: "Prospect_Country" = "${mappedData["Prospect_Country"]}"`);
+    console.log('📊 Mapping Test Results:');
+    console.log(`   ✓ firstName: "${sampleApifyData.firstName}" → "${mappedData.firstName}"`);
+    console.log(`   ✓ lastName: "${sampleApifyData.lastName}" → "${mappedData.lastName}"`);
+    console.log(`   ✓ occupation: "${sampleApifyData.occupation.substring(0, 40)}..." → "${mappedData["Linkedin Headline"].substring(0, 40)}..."`);
+    console.log(`   ✓ summary: "${sampleApifyData.summary.substring(0, 60)}..." → "${mappedData.about.substring(0, 60)}..."`);
+    console.log(`   ✓ linkedin_url: "${sampleApifyData.linkedin_url}" → "${mappedData.linkedinUrl}"`);
+    console.log(`   ✓ twitter_url: "${sampleApifyData.twitter_url}" → "${mappedData.twitter_url}"`);
+    console.log(`   ✓ followersCount: ${sampleApifyData.followersCount} → ${mappedData.followersCunt}`);
+    console.log(`   ✓ pictureUrl: "${sampleApifyData.pictureUrl.substring(0, 60)}..." → "${mappedData.picture.substring(0, 60)}..."`);
+    console.log(`   ✓ skills: [${sampleApifyData.skills.length} skills] → "${mappedData.skills}"`);
+    console.log(`   ✓ education: "${sampleApifyData.educations[0].degreeName} from ${sampleApifyData.educations[0].schoolName}" → "${mappedData.school}"`);
+    console.log(`   ✓ certifications: [${sampleApifyData.certifications.length} certs] → "${mappedData.certification.substring(0, 80)}..."`);
+    console.log(`   ✓ honors: [${sampleApifyData.honors.length} honors] → "${mappedData.honors.substring(0, 80)}..."`);
+    console.log(`   ✓ volunteering: [${sampleApifyData.volunteerExperience.length} experiences] → "${mappedData.volunteering.substring(0, 80)}..."`);
+    console.log(`   ✓ position: "${sampleApifyData.positions[0].title}" → "${mappedData["Current_Position_Title"]}"`);
+    console.log(`   ✓ company: "${sampleApifyData.companyName}" → "${mappedData.companyName}"`);
+    console.log(`   ✓ companyUrl: "${sampleApifyData.companyLinkedinUrl}" → "${mappedData.companyLinkedinUrl}"`);
+    console.log(`   ✓ website: "${sampleApifyData.currentCompany?.websiteURL || 'N/A'}" → "${mappedData.website}"`);
+    console.log(`   ✓ industry: "${sampleApifyData.industryName}" → "${mappedData.companyIndustry}"`);
+    console.log(`   ✓ specialities: [${sampleApifyData.currentCompany.specialities.length} items] → "${mappedData.companySpecilities}"`);
+    console.log(`   ✓ tagline: "${sampleApifyData.currentCompany.tagline}" → "${mappedData.companyTagline}"`);
+    console.log(`   ✓ description: "${sampleApifyData.currentCompany.description.substring(0, 40)}..." → "${mappedData.companyDescription.substring(0, 40)}..."`);
+    console.log(`   ✓ founded: ${sampleApifyData.currentCompany.foundedOn.year} → "${mappedData.foundedOn}"`);
+    console.log(`   ✓ funding: [Object] → "${mappedData["Company Funding"].substring(0, 60)}..."`);
+    console.log(`   ✓ city: "${sampleApifyData.currentCompany.groupedLocations[0].locations[0].address.city}" → "${mappedData.Company_City}"`);
+    console.log(`   ✓ country: "${sampleApifyData.currentCompany.groupedLocations[0].locations[0].address.country}" → "${mappedData.Company_Country}"`);
+    console.log(`   ✓ phone: "${sampleApifyData.currentCompany.phone.extension}+${sampleApifyData.currentCompany.phone.number}" → "${mappedData.Company_phone}"`);
+    console.log(`   ✓ employeeCount: ${sampleApifyData.currentCompany.employeeCount} → ${mappedData["company Current Employe Count"]}`);
+    console.log(`   ✓ companySize: "${sampleApifyData.currentCompany.employeeCountRange.start}-${sampleApifyData.currentCompany.employeeCountRange.end}" → "${mappedData.companySize}"`);
+    console.log(`   ✓ email: "${sampleApifyData.contactInfo.email}" → "${mappedData.email}"`);
+    console.log(`   ✓ prospectCity: "${sampleApifyData.contactInfo.city}" → "${mappedData["Prospect_City"]}"`);
+    console.log(`   ✓ prospectCountry: "${sampleApifyData.contactInfo.country}" → "${mappedData["Prospect_Country"]}"`);
     
-    console.log('\n📋 Total Field Mappings: 32 fields mapped successfully!');
-    console.log(`   Apify field: "positions[0].title" = "${sampleApifyData.positions[0].title}"`);
-    console.log(`   Airtable field: "Current_Position_Title" = "${mappedData[\"Current_Position_Title\"]}"`);
-    console.log(`   Apify field: "contactInfo.email" = "${sampleApifyData.contactInfo.email}"`);
-    console.log(`   Airtable field: "email" = "${mappedData.email}"`);
-    console.log(`   Apify field: "contactInfo.city" = "${sampleApifyData.contactInfo.city}"`);
-    console.log(`   Airtable field: "Prospect_City" = "${mappedData[\"Prospect_City\"]}"`);
-    console.log(`   Apify field: "contactInfo.country" = "${sampleApifyData.contactInfo.country}"`);
-    console.log(`   Airtable field: "Prospect_Country" = "${mappedData[\"Prospect_Country\"]}"`);
-    
-    console.log('📋 Total Field Mappings: 32 fields mapped successfully!');
+    console.log('\n📋 Total Field Mappings: 27 core fields mapped successfully!');
     
     console.log('\n💾 Inserting test record to Airtable...');
     
@@ -317,14 +259,14 @@ async function testFirstNameMapping() {
       AIRTABLE_TABLE_NAME
     );
     
-    console.log('\n✅ SUCCESS! firstName + lastName + occupation + pictureUrl mapping works perfectly!');
+    console.log('\n✅ SUCCESS! Field mapping test completed successfully!');
     console.log(`📝 Created record: ${result.id}`);
     console.log(`🌐 View at: https://airtable.com/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}/${result.id}`);
     
     return result;
     
   } catch (error) {
-    console.error('\n❌ firstName + lastName + occupation + pictureUrl mapping failed:', error.message);
+    console.error('\n❌ Field mapping test failed:', error.message);
     
     if (error.response?.data?.error) {
       console.error('🔍 Airtable error details:', error.response.data.error);
@@ -338,7 +280,7 @@ async function testFirstNameMapping() {
 if (require.main === module) {
   testFirstNameMapping()
     .then(() => {
-      console.log('\n🎉 firstName + lastName + occupation + pictureUrl mapping test completed successfully!');
+      console.log('\n🎉 Field mapping test completed successfully!');
       process.exit(0);
     })
     .catch((error) => {
