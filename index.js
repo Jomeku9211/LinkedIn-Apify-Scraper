@@ -4,6 +4,7 @@ const profileScraper = require('./scrapers/profileScraper');
 const airtableService = require('./services/airtableService');
 const webhookService = require('./services/webhookService');
 const googleSheetsService = require('./services/googleSheetsService');
+const { mapApifyResponseToAirtable, validateAirtableData } = require('./utils/apifyDataMapper');
 
 // Configuration Constants
 const GOOGLE_SPREADSHEET_URL = process.env.GOOGLE_SPREADSHEET_URL || 'https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/export?format=csv';
@@ -38,29 +39,22 @@ async function processProfile(profileUrl, index, total) {
       CONTACT_COMPASS_TOKEN
     );
     
-    // Map profile data to Airtable fields
-    const airtableData = {
-      'Name': profileData.name || '',
-      'LinkedIn URL': profileUrl,
-      'Headline': profileData.headline || '',
-      'First Name': profileData.contactInfo?.first_name || '',
-      'Last Name': profileData.contactInfo?.last_name || '',
-      'Email': profileData.contactInfo?.email || '',
-      'Phone': profileData.contactInfo?.phone_number || '',
-      'Company': profileData.company?.name || profileData.contactInfo?.company_name || '',
-      'Title': profileData.contactInfo?.title || '',
-      'Location': profileData.contactInfo?.city || '',
-      'Country': profileData.contactInfo?.country || '',
-      'Connections': profileData.connectionsCount || 0,
-      'Followers': profileData.followersCount || 0,
-      'Profile Summary': profileData.summary || '',
-      'Company Website': profileData.company?.websiteUrl || '',
-      'Company Description': profileData.company?.description || '',
-      'Company Industry': profileData.company?.industries?.[0]?.name || '',
-      'Company Size': profileData.company?.employeeCountRange ? 
-        `${profileData.company.employeeCountRange.start}-${profileData.company.employeeCountRange.end}` : '',
-      'Scraped Date': new Date().toISOString()
-    };
+    // Use detailed mapping function to map profile data to Airtable fields
+    console.log('🗺️ Mapping Apify LinkedIn response to Airtable format...');
+    const airtableData = mapApifyResponseToAirtable(profileData, profileUrl);
+    
+    // Validate the mapped data before sending to Airtable
+    const isValid = validateAirtableData(airtableData, ['firstName', 'lastName', 'linkedinUrl']);
+    
+    if (!isValid) {
+      throw new Error('Profile data validation failed - missing required fields');
+    }
+    
+    console.log('📝 Sample mapped data (first 5 fields):');
+    const sampleData = Object.entries(airtableData).slice(0, 5);
+    sampleData.forEach(([key, value]) => {
+      console.log(`   ${key}: ${typeof value === 'string' && value.length > 50 ? value.substring(0, 50) + '...' : value}`);
+    });
     
     // Insert profile data into Airtable
     await airtableService.insertRecord(
