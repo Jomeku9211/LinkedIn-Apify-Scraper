@@ -312,7 +312,7 @@ async function runPostScrapingInBackground(config) {
         // Process sequentially, one record at a time
         for (let i = 0; i < records.length; i++) {
             const rec = records[i];
-            addPostLog(`🔄 [${i + 1}/${records.length}] Processing record ${rec.id}`, 'info');
+            addPostLog(`🔄 [${i + 1}/${records.length}] Processing record ${rec.id} (${rec.url})`, 'info');
             try {
                 // Prepare Apify input for a single URL
                 const runSyncUrl = `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync?token=${config.apifyToken}`;
@@ -329,13 +329,24 @@ async function runPostScrapingInBackground(config) {
 
                 // Run actor
                 let datasetId = null;
+                let runId = null;
                 try {
                     const runResp = await axios.post(runSyncUrl, apifyPayload, {
                         headers: { 'Content-Type': 'application/json' },
                         timeout: 600000
                     });
+                    runId = runResp.data?.data?.id || runResp.data?.id;
                     datasetId = runResp.data?.data?.defaultDatasetId || runResp.data?.defaultDatasetId || runResp.data?.defaultDatasetId?.toString?.();
-                    addPostLog(`🗂️ Dataset for ${rec.id}: ${datasetId || 'not provided'}`, datasetId ? 'info' : 'warning');
+                    if (!datasetId && runId) {
+                        try {
+                            const runInfoUrl = `https://api.apify.com/v2/actor-runs/${encodeURIComponent(runId)}?token=${config.apifyToken}`;
+                            const runInfo = await axios.get(runInfoUrl, { timeout: 120000 });
+                            datasetId = runInfo.data?.data?.defaultDatasetId || datasetId;
+                        } catch (e) {
+                            console.warn('ℹ️ Could not fetch run info for defaultDatasetId:', e.response?.status, e.message);
+                        }
+                    }
+                    addPostLog(`🗂️ Dataset for ${rec.id}: ${datasetId || 'not provided'} (run: ${runId || 'n/a'})`, datasetId ? 'info' : 'warning');
                 } catch (apifyErr) {
                     const status = apifyErr.response?.status;
                     const data = apifyErr.response?.data;
@@ -355,12 +366,12 @@ async function runPostScrapingInBackground(config) {
                             timeout: 600000
                         });
                         items = Array.isArray(fbResp.data) ? fbResp.data : [];
-                        addPostLog(`ℹ️ Fallback used for ${rec.id}. Items: ${items.length}`, 'warning');
+                        addPostLog(`ℹ️ Fallback used for ${rec.id} (${rec.url}). Items: ${items.length}`, 'warning');
                     } else {
                         const itemsUrl = `https://api.apify.com/v2/datasets/${encodeURIComponent(datasetId)}/items?token=${config.apifyToken}&format=json`;
                         const itemsResp = await axios.get(itemsUrl, { timeout: 300000 });
                         items = Array.isArray(itemsResp.data) ? itemsResp.data : [];
-                        addPostLog(`📥 Retrieved ${items.length} items for ${rec.id}`, 'info');
+                        addPostLog(`📥 Retrieved ${items.length} items for ${rec.id} from dataset ${datasetId}`, 'info');
                     }
                 } catch (itemsErr) {
                     const status = itemsErr.response?.status;
