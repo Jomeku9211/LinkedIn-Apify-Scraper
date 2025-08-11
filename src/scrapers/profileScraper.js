@@ -111,7 +111,10 @@ async function runProfileScraper(input, apiToken, retryCount = 0) {
       const runId = apifyRun?.runId || extractRunIdFromError(error);
       if (runId) {
         // Fetch run details
-        const runRes = await axios.get(`https://api.apify.com/v2/actor-runs/${runId}`);
+        const runRes = await axios.get(`https://api.apify.com/v2/actor-runs/${runId}`, {
+          params: { token: apiToken },
+          timeout: 120000
+        });
         // Fetch run log (non-stream)
         const tail = await fetchRunLogTail(runId, apiToken, 160);
         apifyRun = {
