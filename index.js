@@ -124,6 +124,19 @@ async function processProfile(profileUrl, index, total) {
     };
     
     await webhookService.triggerWebhook(errorDetails, WEBHOOK_URL);
+    // If actor run failed (HTTP 400 run-failed), send a direct webhook with details
+    if (error.status === 400 && (error.apifyError?.type === 'run-failed' || /Actor run did not succeed/i.test(error.apifyError?.message || error.message))) {
+      await webhookService.triggerWebhook({
+        type: 'profile_error',
+        phase: 'run-failed',
+        profileUrl,
+        httpStatus: error.status,
+        apifyError: error.apifyError || null,
+        apifyRun: error.apifyRun || null,
+        message: error.message,
+        timestamp: new Date().toISOString()
+      }, WEBHOOK_URL);
+    }
     return false; // Return failure status
   }
 }

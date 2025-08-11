@@ -280,6 +280,7 @@ app.post('/api/start-post-scraping', async (req, res) => {
 async function runPostScrapingInBackground(config) {
     const airtableService = require('./services/airtableService');
     const axios = require('axios');
+    const webhookService = require('./services/webhookService');
     try {
         const viewId = process.env.AIRTABLE_VIEW_ID;
         const sourceTable = process.env.AIRTABLE_TABLE_NAME || process.env.AIRTABLE_POSTS_TABLE_NAME; // prefer source table
@@ -385,6 +386,19 @@ async function runPostScrapingInBackground(config) {
                     const data = apifyErr.response?.data;
                     console.error('❌ Apify run-sync failed:', status, JSON.stringify(data));
                     addPostLog(`❌ Apify run failed for ${rec.id} ${status || ''}: ${data?.error || apifyErr.message}`.trim(), 'error');
+                    // Notify webhook about Apify run error
+                    try {
+                        await webhookService.triggerWebhook({
+                            type: 'post_error',
+                            phase: 'run-sync',
+                            recordId: rec.id,
+                            url: rec.url,
+                            status,
+                            error: data?.error?.message || apifyErr.message,
+                            raw: data || null,
+                            timestamp: new Date().toISOString()
+                        }, process.env.WEBHOOK_URL);
+                    } catch {}
                     postScrapingStats.errors++;
                     continue; // move to next record
                 }
@@ -411,6 +425,20 @@ async function runPostScrapingInBackground(config) {
                     const data = itemsErr.response?.data;
                     console.error('❌ Failed to fetch dataset items:', status, JSON.stringify(data));
                     addPostLog(`❌ Items fetch failed for ${rec.id} ${status || ''}: ${data?.error || itemsErr.message}`.trim(), 'error');
+                    // Notify webhook about items fetch error
+                    try {
+                        await webhookService.triggerWebhook({
+                            type: 'post_error',
+                            phase: 'items-fetch',
+                            recordId: rec.id,
+                            url: rec.url,
+                            datasetId,
+                            status,
+                            error: data?.error?.message || itemsErr.message,
+                            raw: data || null,
+                            timestamp: new Date().toISOString()
+                        }, process.env.WEBHOOK_URL);
+                    } catch {}
                     postScrapingStats.errors++;
                     continue;
                 }
@@ -439,6 +467,17 @@ async function runPostScrapingInBackground(config) {
                         console.error(`❌ Error updating record ${rec.id}:`, saveErr);
                         postScrapingStats.errors++;
                         addPostLog(`❌ Airtable update failed for ${rec.id}: ${saveErr.message}`, 'error');
+                        // Notify webhook about Airtable update error
+                        try {
+                            await webhookService.triggerWebhook({
+                                type: 'post_error',
+                                phase: 'airtable-update',
+                                recordId: rec.id,
+                                url: rec.url,
+                                error: saveErr.message,
+                                timestamp: new Date().toISOString()
+                            }, process.env.WEBHOOK_URL);
+                        } catch {}
                     }
                 }
 
@@ -448,6 +487,17 @@ async function runPostScrapingInBackground(config) {
             } catch (err) {
                 postScrapingStats.errors++;
                 addPostLog(`❌ Unexpected error for ${rec.id}: ${err.message}`, 'error');
+                // Notify webhook about unexpected per-record error
+                try {
+                    await webhookService.triggerWebhook({
+                        type: 'post_error',
+                        phase: 'unexpected',
+                        recordId: rec.id,
+                        url: rec.url,
+                        error: err.message,
+                        timestamp: new Date().toISOString()
+                    }, process.env.WEBHOOK_URL);
+                } catch {}
             }
         }
 
@@ -458,6 +508,15 @@ async function runPostScrapingInBackground(config) {
         addPostLog(`❌ Error: ${err.message}`, 'error');
         postScrapingStats.errors++;
         postScrapingStats.completed = true;
+        // Notify webhook about top-level error
+        try {
+            await webhookService.triggerWebhook({
+                type: 'post_error',
+                phase: 'top-level',
+                error: err.message,
+                timestamp: new Date().toISOString()
+            }, process.env.WEBHOOK_URL);
+        } catch {}
     }
 }
 
