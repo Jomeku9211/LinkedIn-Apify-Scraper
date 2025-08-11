@@ -5,34 +5,95 @@ const PROFILE_SCRAPER_ACTOR = 'curious_coder~linkedin-profile-scraper';
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 5000; // 5 seconds
 
+function extractRunIdFromError(error) {
+  try {
+    const msg = error?.response?.data?.error?.message || error.message || '';
+    const m = msg.match(/run ID:\s*([A-Za-z0-9]+)/i);
+    return m && m[1] ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchRunLogTail(runId, apiToken, tailLines = 120) {
+  const logRes = await axios.get(`https://api.apify.com/v2/actor-runs/${runId}/log`, {
+    params: { token: apiToken, stream: 0 },
+    responseType: 'text',
+    transformResponse: [d => d]
+  });
+  const logText = typeof logRes.data === 'string' ? logRes.data : String(logRes.data || '');
+  const lines = logText.split('\n');
+  return lines.slice(-tailLines).join('\n');
+}
+
+function detectApifyWarning(logText) {
+  if (!logText) return null;
+  const patterns = [
+    /redirected\s+10\s+times\b/i,
+    /\bWARN\b.*redirected/i,
+    /too many redirects/i
+  ];
+  for (const re of patterns) {
+    const m = logText.match(re);
+    if (m) return m[0];
+  }
+  return null;
+}
+
 /**
  * Run Apify LinkedIn profile scraper with direct dataset items return
  */
 async function runProfileScraper(input, apiToken, retryCount = 0) {
   try {
     console.log(`🔄 Running profile scraper (attempt ${retryCount + 1}/${MAX_RETRIES + 1})...`);
-    
-    const response = await axios.post(
-      `https://api.apify.com/v2/acts/${PROFILE_SCRAPER_ACTOR}/run-sync-get-dataset-items`,
-      input,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiToken}`
-        },
-        params: {
-          token: apiToken
-        },
-        timeout: 300000 // 5 minutes timeout
+
+    // First, run the actor to get runId and datasetId
+    const runSyncUrl = `https://api.apify.com/v2/acts/${encodeURIComponent(PROFILE_SCRAPER_ACTOR)}/run-sync`;
+    const runResp = await axios.post(runSyncUrl, input, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiToken}`
+      },
+      params: { token: apiToken },
+      timeout: 600000
+    });
+
+    const runId = runResp.data?.data?.id || runResp.data?.id;
+    const datasetId = runResp.data?.data?.defaultDatasetId || runResp.data?.defaultDatasetId;
+    console.log('ℹ️ Profile run started. runId:', runId, 'datasetId:', datasetId);
+
+    // Fetch run logs and detect warnings
+    if (runId) {
+      try {
+        const tail = await fetchRunLogTail(runId, apiToken, 160);
+        const warn = detectApifyWarning(tail);
+        if (warn) {
+          const warnErr = new Error(`Apify warning detected: ${warn}`);
+          warnErr.warningDetected = true;
+          warnErr.apifyRun = { runId, logTail: tail };
+          throw warnErr;
+        }
+      } catch (e) {
+        if (!e.warningDetected) console.warn('⚠️ Could not fetch or parse Apify run log for warnings:', e.message);
+        else throw e;
       }
-    );
-    
-    if (!response.data || response.data.length === 0) {
+    }
+
+    if (!datasetId) {
+      throw new Error('No datasetId returned from profile scraper run');
+    }
+
+    // Fetch dataset items
+    const itemsUrl = `https://api.apify.com/v2/datasets/${encodeURIComponent(datasetId)}/items`;
+    const itemsResp = await axios.get(itemsUrl, {
+      params: { token: apiToken, format: 'json' },
+      timeout: 300000
+    });
+    if (!Array.isArray(itemsResp.data) || itemsResp.data.length === 0) {
       throw new Error('No data returned from profile scraper');
     }
-    
-    console.log(`✅ Profile scraper completed. Retrieved ${response.data.length} items`);
-    return response.data[0]; // Return first item directly
+    console.log(`✅ Profile scraper completed. Retrieved ${itemsResp.data.length} items`);
+    return itemsResp.data[0];
     
   } catch (error) {
     console.error(`❌ Error running profile scraper:`, error.message);
@@ -44,24 +105,15 @@ async function runProfileScraper(input, apiToken, retryCount = 0) {
       console.error('❌ Response data:', JSON.stringify(error.response.data, null, 2));
     }
 
-    // Try to fetch Apify run details/logs if a runId is present in the error message
-    let apifyRun = null;
+    // Try to fetch Apify run details/logs if a runId is present
+    let apifyRun = error.apifyRun || null;
     try {
-      const msg = error?.response?.data?.error?.message || error.message || '';
-      const m = msg.match(/run ID:\s*([A-Za-z0-9]+)/i);
-      const runId = m && m[1] ? m[1] : null;
+      const runId = apifyRun?.runId || extractRunIdFromError(error);
       if (runId) {
         // Fetch run details
         const runRes = await axios.get(`https://api.apify.com/v2/actor-runs/${runId}`);
         // Fetch run log (non-stream)
-        const logRes = await axios.get(`https://api.apify.com/v2/actor-runs/${runId}/log`, {
-          params: { token: apiToken, stream: 0 },
-          responseType: 'text',
-          transformResponse: [data => data]
-        });
-        const logText = typeof logRes.data === 'string' ? logRes.data : String(logRes.data || '');
-        const logLines = logText.split('\n');
-        const tail = logLines.slice(-80).join('\n');
+        const tail = await fetchRunLogTail(runId, apiToken, 160);
         apifyRun = {
           runId,
           status: runRes.data?.data?.status,
@@ -86,7 +138,8 @@ async function runProfileScraper(input, apiToken, retryCount = 0) {
       message: error.message,
       status: error.response?.status,
       apifyError: error.response?.data?.error || null,
-      apifyRun
+      apifyRun,
+      warningDetected: !!error.warningDetected,
     };
 
     throw enhancedError;

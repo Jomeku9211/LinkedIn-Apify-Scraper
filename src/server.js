@@ -347,6 +347,39 @@ async function runPostScrapingInBackground(config) {
                         }
                     }
                     addPostLog(`🗂️ Dataset for ${rec.id}: ${datasetId || 'not provided'} (run: ${runId || 'n/a'})`, datasetId ? 'info' : 'warning');
+
+                    // Fetch run log and detect Apify warnings (e.g., redirected 10 times)
+                    if (runId) {
+                        try {
+                            const logRes = await axios.get(`https://api.apify.com/v2/actor-runs/${encodeURIComponent(runId)}/log`, {
+                                params: { token: config.apifyToken, stream: 0 },
+                                responseType: 'text',
+                                transformResponse: [d => d],
+                                timeout: 120000
+                            });
+                            const logText = typeof logRes.data === 'string' ? logRes.data : String(logRes.data || '');
+                            const warnMatch = logText.match(/redirected\s+10\s+times\b/i);
+                            if (warnMatch) {
+                                const webhookService = require('./services/webhookService');
+                                const details = {
+                                    type: 'post_warning',
+                                    message: `Apify warning detected: ${warnMatch[0]}`,
+                                    recordId: rec.id,
+                                    url: rec.url,
+                                    runId,
+                                    logTail: logText.split('\n').slice(-120).join('\n'),
+                                    timestamp: new Date().toISOString()
+                                };
+                                await webhookService.triggerWebhook(details, process.env.WEBHOOK_URL);
+                                addPostLog(`⚠️ Warning detected for ${rec.id}: ${warnMatch[0]}. Stopping.`, 'warning');
+                                // Stop entire post scraping loop
+                                postScrapingStats.completed = true;
+                                return;
+                            }
+                        } catch (e) {
+                            console.warn('⚠️ Could not fetch post run log for warnings:', e.message);
+                        }
+                    }
                 } catch (apifyErr) {
                     const status = apifyErr.response?.status;
                     const data = apifyErr.response?.data;

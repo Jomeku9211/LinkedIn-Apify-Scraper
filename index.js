@@ -84,6 +84,24 @@ async function processProfile(profileUrl, index, total) {
     
   } catch (error) {
     console.error(`❌ Error processing profile ${index + 1}/${total}:`, error.message);
+    // If an Apify warning was detected (like too many redirects), notify and stop the whole run
+    if (error.warningDetected || /redirected\s+10\s+times/i.test(error.message)) {
+      const warningDetails = {
+        type: 'profile_warning',
+        profileUrl,
+        index: index + 1,
+        total,
+        error: error.message,
+        apifyErrorType: error.apifyError?.type || null,
+        apifyErrorMessage: error.apifyError?.message || null,
+        httpStatus: error.status || null,
+        apifyRun: error.apifyRun || null,
+        timestamp: new Date().toISOString()
+      };
+      await webhookService.triggerWebhook(warningDetails, WEBHOOK_URL);
+      // Stop further processing by rethrowing
+      throw error;
+    }
     
     // Prepare enhanced error details for webhook
     const errorDetails = {
@@ -160,7 +178,7 @@ async function main() {
     console.log(`🎯 Processing ${todoItems.length} profiles...`);
     
     // Process each "To Do" profile
-    for (let i = 0; i < todoItems.length; i++) {
+  for (let i = 0; i < todoItems.length; i++) {
       const row = todoItems[i];
       const profileUrl = row[linkedinColumn];
       
@@ -169,7 +187,7 @@ async function main() {
         continue;
       }
       
-      const success = await processProfile(profileUrl, i, todoItems.length);
+  const success = await processProfile(profileUrl, i, todoItems.length);
       
       // Update status to "Done" if processing was successful and status column exists
       if (success && statusColumn) {
@@ -185,7 +203,7 @@ async function main() {
       }
       
       // Add delay between requests to avoid rate limiting
-      if (i < spreadsheetData.length - 1) {
+  if (i < spreadsheetData.length - 1) {
         console.log('⏳ Waiting 10 seconds before next profile...');
         await new Promise(resolve => setTimeout(resolve, 10000));
       }
