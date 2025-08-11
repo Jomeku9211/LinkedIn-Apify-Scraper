@@ -91,3 +91,8 @@ typings/
 # VS Code
 .vscode/settings.json
 .vscode/launch.json
+
+# Google service account keys (do not commit secrets)
+scrapping-468707-9d0cffbf03a2.json
+*.gsa.json
+*.service-account.json

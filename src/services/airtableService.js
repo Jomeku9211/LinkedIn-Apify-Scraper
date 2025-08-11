@@ -31,7 +31,7 @@ async function insertRecord(data, airtableToken, baseId, tableName) {
     });
 
     const response = await axios.post(
-      `https://api.airtable.com/v0/${baseId}/${tableName}`,
+      `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`,
       {
         fields: data
       },
@@ -45,7 +45,7 @@ async function insertRecord(data, airtableToken, baseId, tableName) {
     );
 
     console.log(`✅ Successfully inserted record with ID: ${response.data.id}`);
-    console.log(`📊 Record URL: https://airtable.com/${baseId}/${tableName}/${response.data.id}`);
+  console.log(`📊 Record URL: https://airtable.com/${baseId}/${encodeURIComponent(tableName)}/${response.data.id}`);
     return response.data;
 
   } catch (error) {
@@ -91,15 +91,14 @@ async function fetchUrlsFromView(airtableToken, baseId, tableName, viewId) {
     console.log(`📋 Fetching LinkedIn URLs from Airtable view: ${viewId}`);
     
     const response = await axios.get(
-      `https://api.airtable.com/v0/${baseId}/${tableName}`,
+      `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`,
       {
         headers: {
           'Authorization': `Bearer ${airtableToken}`,
           'Content-Type': 'application/json'
         },
         params: {
-          view: viewId,
-          fields: ['linkedinUrl'] // Only fetch the LinkedIn URL field
+          view: viewId
         },
         timeout: 30000
       }
@@ -109,10 +108,33 @@ async function fetchUrlsFromView(airtableToken, baseId, tableName, viewId) {
     console.log(`📊 Found ${records.length} records in view`);
     
     // Extract LinkedIn URLs and filter out empty ones
+    const FIELD_CANDIDATES = [
+      'linkedinUrl',
+      'LinkedIn URL',
+      'Linkedin URL',
+      'LinkedIn',
+      'Profile URL',
+      'LinkedIn Profile',
+      'LinkedIn Profile URL',
+      'URL'
+    ];
+
     const urls = records
-      .map(record => record.fields.linkedinUrl)
-      .filter(url => url && url.trim())
-      .map(url => url.trim());
+      .map(record => {
+        const f = record.fields || {};
+        for (const key of FIELD_CANDIDATES) {
+          if (f[key] && typeof f[key] === 'string' && f[key].trim()) return f[key].trim();
+        }
+        // Also support arrays of URLs if present
+        for (const key of FIELD_CANDIDATES) {
+          if (Array.isArray(f[key]) && f[key].length > 0 && typeof f[key][0] === 'string') {
+            const v = f[key][0].trim();
+            if (v) return v;
+          }
+        }
+        return null;
+      })
+      .filter(Boolean);
     
     console.log(`✅ Extracted ${urls.length} valid LinkedIn URLs`);
     return urls;
@@ -130,6 +152,45 @@ async function fetchUrlsFromView(airtableToken, baseId, tableName, viewId) {
     }
     
     throw error;
+  }
+}
+
+/**
+ * Fetch records with their IDs and resolved LinkedIn URL from a view.
+ * Returns array of { id, fields, url }.
+ */
+async function fetchUrlRecordsFromView(airtableToken, baseId, tableName, viewId) {
+  try {
+    console.log(`📋 Fetching records (id + URL) from Airtable view: ${viewId}`);
+    const response = await axios.get(
+      `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${airtableToken}`,
+          'Content-Type': 'application/json'
+        },
+        params: { view: viewId },
+        timeout: 30000
+      }
+    );
+    const FIELD_CANDIDATES = [
+      'linkedinUrl', 'LinkedIn URL', 'Linkedin URL', 'LinkedIn', 'Profile URL', 'LinkedIn Profile', 'LinkedIn Profile URL', 'URL'
+    ];
+    const records = response.data.records || [];
+    const result = records.map(r => {
+      const f = r.fields || {};
+      let url = null;
+      for (const key of FIELD_CANDIDATES) {
+        if (f[key] && typeof f[key] === 'string' && f[key].trim()) { url = f[key].trim(); break; }
+        if (Array.isArray(f[key]) && f[key].length > 0 && typeof f[key][0] === 'string' && f[key][0].trim()) { url = f[key][0].trim(); break; }
+      }
+      return { id: r.id, fields: f, url };
+    }).filter(x => !!x.url);
+    console.log(`✅ Found ${result.length} records with URL`);
+    return result;
+  } catch (err) {
+    console.error('❌ Error fetching id+URL records:', err.response?.status, JSON.stringify(err.response?.data));
+    throw err;
   }
 }
 
@@ -153,7 +214,7 @@ async function insertPostData(postData, airtableToken, baseId, tableName) {
     });
 
     const response = await axios.post(
-      `https://api.airtable.com/v0/${baseId}/${tableName}`,
+      `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`,
       {
         fields: postData
       },
@@ -189,7 +250,7 @@ async function fetchRecordsFromView(airtableToken, baseId, tableName, viewId, fi
     console.log(`📋 Fetching records from Airtable view: ${viewId}`);
     
     const response = await axios.get(
-      `https://api.airtable.com/v0/${baseId}/${tableName}`,
+      `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`,
       {
         headers: {
           'Authorization': `Bearer ${airtableToken}`,
@@ -240,7 +301,7 @@ async function updateRecord(recordId, data, airtableToken, baseId, tableName) {
     console.log(`📝 Updating record ${recordId} in Airtable...`);
     
     const response = await axios.patch(
-      `https://api.airtable.com/v0/${baseId}/${tableName}/${recordId}`,
+      `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${recordId}`,
       {
         fields: data
       },
@@ -273,5 +334,6 @@ module.exports = {
   fetchUrlsFromView,
   insertPostData,
   fetchRecordsFromView,
+  fetchUrlRecordsFromView,
   updateRecord
 };
