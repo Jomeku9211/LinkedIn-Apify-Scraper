@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const axios = require('axios');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 const { exec, spawn } = require('child_process');
@@ -9,6 +10,12 @@ const { fetchRecordsFromView, updateRecord } = require('./services/airtableServi
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Utility: avoid printing full secrets in logs
+function maskToken(token) {
+    if (!token || typeof token !== 'string') return '';
+    return token.length > 8 ? `${token.slice(0, 8)}...` : '***';
+}
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));
@@ -91,6 +98,9 @@ let postScrapingStats = {
     completed: false,
     logs: []
 };
+// Cooperative cancellation for post scraper
+let postScrapingActive = false;
+let postScrapingShouldStop = false;
 
 // Global state for tracking ChatGPT processing session
 let chatgptProcess = null;
@@ -136,7 +146,6 @@ app.post('/api/start-scraping', async (req, res) => {
             completed: false,
             logs: []
         };
-
         // Create temporary environment file with configuration
         const envConfig = `
 GOOGLE_SPREADSHEET_URL=${process.env.GOOGLE_SPREADSHEET_URL}
@@ -248,7 +257,7 @@ app.post('/api/start-post-scraping', async (req, res) => {
         if (!process.env.AIRTABLE_TABLE_NAME && !process.env.AIRTABLE_POSTS_TABLE_NAME) missing.push('AIRTABLE_TABLE_NAME or AIRTABLE_POSTS_TABLE_NAME');
         if (!process.env.AIRTABLE_VIEW_ID) missing.push('AIRTABLE_VIEW_ID');
         if (missing.length) {
-            return res.status(500).json({ error: `Missing required environment variables: ${missing.join(', ')}` });
+            return res.status(400).json({ error: 'Missing required environment variables', missing });
         }
 
         // Reset post scraping stats
@@ -260,6 +269,8 @@ app.post('/api/start-post-scraping', async (req, res) => {
             completed: false,
             logs: []
         };
+    postScrapingShouldStop = false;
+    postScrapingActive = true;
 
         addPostLog('🚀 Starting LinkedIn post scraping process...', 'info');
         addPostLog('📊 Fetching LinkedIn URLs from Airtable...', 'info');
@@ -274,6 +285,292 @@ app.post('/api/start-post-scraping', async (req, res) => {
         postScrapingStats.errors++;
         postScrapingStats.completed = true;
         return res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Environment readiness check for UI
+ */
+app.get('/api/env-check', (req, res) => {
+    const postEnv = {
+        AIRTABLE_TOKEN: !!process.env.AIRTABLE_TOKEN,
+        AIRTABLE_BASE_ID: !!process.env.AIRTABLE_BASE_ID,
+        AIRTABLE_TABLE_NAME: !!process.env.AIRTABLE_TABLE_NAME || !!process.env.AIRTABLE_POSTS_TABLE_NAME,
+        AIRTABLE_VIEW_ID: !!process.env.AIRTABLE_VIEW_ID,
+        WEBHOOK_URL: !!process.env.WEBHOOK_URL,
+    };
+    const postMissing = Object.entries(postEnv)
+        .filter(([, ok]) => !ok)
+        .map(([k]) => k === 'AIRTABLE_TABLE_NAME' ? 'AIRTABLE_TABLE_NAME or AIRTABLE_POSTS_TABLE_NAME' : k);
+
+    const profileEnv = {
+        GOOGLE_SPREADSHEET_URL: !!process.env.GOOGLE_SPREADSHEET_URL,
+        AIRTABLE_TOKEN: !!process.env.AIRTABLE_TOKEN,
+        AIRTABLE_BASE_ID: !!process.env.AIRTABLE_BASE_ID,
+        AIRTABLE_TABLE_NAME: !!process.env.AIRTABLE_TABLE_NAME,
+        WEBHOOK_URL: !!process.env.WEBHOOK_URL,
+        GOOGLE_SA_AUTH: !!(process.env.GOOGLE_SA_CLIENT_EMAIL && process.env.GOOGLE_SA_PRIVATE_KEY) || !!process.env.GOOGLE_SA_KEY_FILE,
+    };
+    const profileMissing = Object.entries(profileEnv).filter(([, ok]) => !ok).map(([k]) => k);
+
+    const chatgptEnv = {
+        AIRTABLE_TOKEN: !!process.env.AIRTABLE_TOKEN,
+        AIRTABLE_BASE_ID: !!process.env.AIRTABLE_BASE_ID,
+        AIRTABLE_TABLE_NAME: !!process.env.AIRTABLE_TABLE_NAME,
+        AIRTABLE_CHATGPT_VIEW_ID_or_AIRTABLE_VIEW_ID: !!(process.env.AIRTABLE_CHATGPT_VIEW_ID || process.env.AIRTABLE_VIEW_ID),
+        CHATGPT_API_TOKEN: !!process.env.CHATGPT_API_TOKEN,
+        CHATGPT_ASSISTANT_ID: !!process.env.CHATGPT_ASSISTANT_ID,
+    };
+    const chatgptMissing = Object.entries(chatgptEnv).filter(([, ok]) => !ok).map(([k]) => k);
+
+    res.json({
+        post: { ok: postMissing.length === 0, missing: postMissing },
+        profile: { ok: profileMissing.length === 0, missing: profileMissing },
+        chatgpt: { ok: chatgptMissing.length === 0, missing: chatgptMissing }
+    });
+});
+
+/**
+ * Airtable Upsert Self-Test
+ * Query params: url (required), field (optional; defaults to AIRTABLE_UNIQUE_URL_FIELD or 'linkedinUrl')
+ * Returns whether an update or insert would occur, with matched recordId if any.
+ */
+app.get('/api/airtable-selftest', async (req, res) => {
+    try {
+        const url = (req.query.url || '').trim();
+        const field = (req.query.field || process.env.AIRTABLE_UNIQUE_URL_FIELD || 'linkedinUrl').trim();
+        const token = process.env.AIRTABLE_TOKEN;
+        const baseId = process.env.AIRTABLE_BASE_ID;
+        const tableName = process.env.AIRTABLE_TABLE_NAME;
+
+        const missing = [];
+        if (!token) missing.push('AIRTABLE_TOKEN');
+        if (!baseId) missing.push('AIRTABLE_BASE_ID');
+        if (!tableName) missing.push('AIRTABLE_TABLE_NAME');
+        if (!url) missing.push('url');
+        if (!field) missing.push('field');
+        if (missing.length) {
+            return res.status(400).json({ ok: false, error: 'Missing parameters', missing });
+        }
+
+        const airtableService = require('./services/airtableService');
+        const found = await airtableService.findRecordByUrl(token, baseId, tableName, field, url);
+        if (found) {
+            return res.json({ ok: true, mode: 'update', recordId: found.id, field, url, baseId, tableName });
+        }
+        return res.json({ ok: true, mode: 'insert', recordId: null, field, url, baseId, tableName });
+    } catch (e) {
+        return res.status(500).json({ ok: false, error: e.message });
+    }
+});
+
+/**
+ * Manual Profile Scraper - Process Run ID
+ * POST body: { runId, apifyToken }
+ * Fetches data from Apify and sends to Airtable
+ */
+app.post('/api/manual-profile-scraper', async (req, res) => {
+    try {
+        const { runId, apifyToken } = req.body || {};
+        
+        if (!runId || !apifyToken) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Missing required parameters: runId and apifyToken' 
+            });
+        }
+
+        console.log(`🔧 Manual Profile Scraper: Processing Run ID=${runId}, token=${maskToken(apifyToken)}`);
+
+        // Step 1: Get run details from Apify
+        const runDetailsUrl = `https://api.apify.com/v2/actor-runs/${runId}`;
+        console.log(`🌐 GET ${runDetailsUrl}?token=${maskToken(apifyToken)}`);
+        const runResponse = await axios.get(runDetailsUrl, {
+            params: { token: apifyToken },
+            timeout: 30000
+        });
+
+        const runData = runResponse.data?.data;
+        if (!runData) {
+            throw new Error('Invalid response from Apify API');
+        }
+
+        console.log(`📊 Run Status: ${runData.status}`);
+        console.log(`📊 Dataset ID: ${runData.defaultDatasetId}`);
+
+        if (runData.status !== 'SUCCEEDED') {
+            return res.json({ 
+                success: false, 
+                error: `Run not completed. Status: ${runData.status}`,
+                runStatus: runData.status,
+                datasetId: runData.defaultDatasetId || null
+            });
+        }
+
+        const datasetId = runData.defaultDatasetId;
+        if (!datasetId) {
+            throw new Error('No datasetId returned from profile scraper run');
+        }
+
+        // Step 2: Get dataset items from Apify
+        console.log(`🌐 GET https://api.apify.com/v2/datasets/${datasetId}/items?token=${maskToken(apifyToken)}&format=json`);
+        const itemsResponse = await axios.get(`https://api.apify.com/v2/datasets/${datasetId}/items`, {
+            params: { token: apifyToken, format: 'json' },
+            timeout: 30000
+        });
+
+        const items = Array.isArray(itemsResponse.data) ? itemsResponse.data : [];
+        if (items.length === 0) {
+            throw new Error('No data returned from profile scraper');
+        }
+
+        console.log(`✅ Retrieved ${items.length} profile(s) from Apify`);
+        try {
+            const firstKeys = Object.keys(items[0] || {});
+            console.log(`🔍 First item keys: ${firstKeys.join(', ')}`);
+        } catch {}
+
+        // Step 3: Process each profile and send to Airtable with rate limiting
+        const results = [];
+        const airtableService = require('./services/airtableService');
+        const { mapApifyResponseToAirtable, validateAirtableData } = require('./utils/apifyDataMapper');
+
+        // Rate limiting: Max 4 requests/second (safe margin below Airtable's 5 req/s limit)
+        const RATE_LIMIT_DELAY = 250; // 250ms between requests = 4 req/s
+        
+        for (let i = 0; i < items.length; i++) {
+            const profileData = items[i];
+            try {
+                console.log(`🔄 Processing profile ${i + 1}/${items.length}: ${profileData.firstName} ${profileData.lastName}`);
+
+                // Map to Airtable format
+                const airtableData = mapApifyResponseToAirtable(profileData, profileData.linkedinUrl || profileData.url);
+                
+                // Validate data
+                const isValid = validateAirtableData(airtableData, ['firstName', 'lastName']);
+                if (!isValid) {
+                    console.warn(`⚠️ Profile ${i + 1} validation failed`);
+                    results.push({ 
+                        index: i, 
+                        success: false, 
+                        error: 'Data validation failed' 
+                    });
+                    continue;
+                }
+
+                // Send to Airtable with retry logic
+                const urlField = process.env.AIRTABLE_UNIQUE_URL_FIELD || 'linkedinUrl';
+                const urlValue = airtableData[urlField];
+                
+                let airtableResult;
+                let retryCount = 0;
+                const maxRetries = 3;
+                
+                while (retryCount <= maxRetries) {
+                    try {
+                        if (urlValue) {
+                            airtableResult = await airtableService.updateOrInsertByUrl({
+                                airtableToken: process.env.AIRTABLE_TOKEN,
+                                baseId: process.env.AIRTABLE_BASE_ID,
+                                tableName: process.env.AIRTABLE_TABLE_NAME,
+                                urlField,
+                                urlValue,
+                                fields: airtableData
+                            });
+                        } else {
+                            airtableResult = await airtableService.insertRecord(
+                                airtableData,
+                                process.env.AIRTABLE_TOKEN,
+                                process.env.AIRTABLE_BASE_ID,
+                                process.env.AIRTABLE_TABLE_NAME
+                            );
+                        }
+                        
+                        // Success - break out of retry loop
+                        break;
+                        
+                    } catch (airtableError) {
+                        retryCount++;
+                        
+                        if (airtableError.response?.status === 429) {
+                            // Rate limit exceeded - wait longer
+                            const waitTime = Math.max(30000, retryCount * 30000); // 30s, 60s, 90s
+                            console.log(`⏳ Rate limit (429) hit for profile ${i + 1}. Waiting ${waitTime/1000}s before retry ${retryCount}/${maxRetries}`);
+                            
+                            if (retryCount <= maxRetries) {
+                                await new Promise(resolve => setTimeout(resolve, waitTime));
+                                continue;
+                            } else {
+                                throw new Error(`Rate limit exceeded after ${maxRetries} retries`);
+                            }
+                        } else if (retryCount <= maxRetries) {
+                            // Other error - wait a bit and retry
+                            const waitTime = retryCount * 2000; // 2s, 4s, 6s
+                            console.log(`⚠️ Airtable error for profile ${i + 1}. Retrying in ${waitTime/1000}s (${retryCount}/${maxRetries})`);
+                            await new Promise(resolve => setTimeout(resolve, waitTime));
+                            continue;
+                        } else {
+                            // Max retries reached
+                            throw airtableError;
+                        }
+                    }
+                }
+
+                results.push({ 
+                    index: i, 
+                    success: true, 
+                    profileName: `${profileData.firstName} ${profileData.lastName}`,
+                    airtableAction: airtableResult.action || 'inserted',
+                    recordId: airtableResult.record?.id || 'n/a'
+                });
+
+                console.log(`✅ Profile ${i + 1} processed successfully`);
+
+                // Rate limiting delay between requests (except for the last one)
+                if (i < items.length - 1) {
+                    console.log(`⏱️ Rate limiting: Waiting ${RATE_LIMIT_DELAY}ms before next request...`);
+                    await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY));
+                }
+
+            } catch (profileError) {
+                console.error(`❌ Error processing profile ${i + 1}:`, profileError.message);
+                results.push({ 
+                    index: i, 
+                    success: false, 
+                    error: profileError.message 
+                });
+            }
+        }
+
+        const successCount = results.filter(r => r.success).length;
+        const errorCount = results.filter(r => !r.success).length;
+
+        console.log(`🎉 Manual Profile Scraper completed: ${successCount} success, ${errorCount} errors`);
+
+        return res.json({
+            success: true,
+            message: `Processed ${items.length} profile(s): ${successCount} success, ${errorCount} errors`,
+            runStatus: 'SUCCEEDED',
+            datasetId,
+            itemsCount: items.length,
+            firstItemKeys: Object.keys(items[0] || {}),
+            totalProfiles: items.length,
+            successCount,
+            errorCount,
+            results
+        });
+
+    } catch (error) {
+        const statusCode = error.response?.status || 500;
+        const apiMessage = error.response?.data?.error || error.response?.data?.message;
+        console.error(`❌ Manual Profile Scraper error (${statusCode}):`, error.message);
+        if (apiMessage) console.error('   ↳ API says:', apiMessage);
+        return res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            statusCode,
+            apifyMessage: apiMessage || null
+        });
     }
 });
 
@@ -312,11 +609,15 @@ async function runPostScrapingInBackground(config) {
 
         // Process sequentially, one record at a time
         for (let i = 0; i < records.length; i++) {
+            if (postScrapingShouldStop) {
+                addPostLog('⏹️ Stop requested. Exiting before processing next record.', 'warning');
+                break;
+            }
             const rec = records[i];
             addPostLog(`🔄 [${i + 1}/${records.length}] Processing record ${rec.id} (${rec.url})`, 'info');
             try {
                 // Prepare Apify input for a single URL
-                const runSyncUrl = `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync?token=${config.apifyToken}`;
+                const startRunUrl = `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/runs?token=${config.apifyToken}`;
                 const apifyPayload = {
                     cookie: config.cookies,
                     deepScrape: (typeof config.deepScrape === 'boolean') ? config.deepScrape : true,
@@ -332,25 +633,72 @@ async function runPostScrapingInBackground(config) {
                 let datasetId = null;
                 let runId = null;
                 try {
-                    const runResp = await axios.post(runSyncUrl, apifyPayload, {
+                    // Start the run
+                    const startResp = await axios.post(startRunUrl, apifyPayload, {
                         headers: { 'Content-Type': 'application/json' },
-                        timeout: 600000
+                        timeout: 120000
                     });
-                    runId = runResp.data?.data?.id || runResp.data?.id;
-                    datasetId = runResp.data?.data?.defaultDatasetId || runResp.data?.defaultDatasetId || runResp.data?.defaultDatasetId?.toString?.();
-                    if (!datasetId && runId) {
-                        try {
-                            const runInfoUrl = `https://api.apify.com/v2/actor-runs/${encodeURIComponent(runId)}?token=${config.apifyToken}`;
-                            const runInfo = await axios.get(runInfoUrl, { timeout: 120000 });
-                            datasetId = runInfo.data?.data?.defaultDatasetId || datasetId;
-                        } catch (e) {
-                            console.warn('ℹ️ Could not fetch run info for defaultDatasetId:', e.response?.status, e.message);
-                        }
-                    }
-                    addPostLog(`🗂️ Dataset for ${rec.id}: ${datasetId || 'not provided'} (run: ${runId || 'n/a'})`, datasetId ? 'info' : 'warning');
-
-                    // Fetch run log and detect Apify warnings (e.g., redirected 10 times)
+                    runId = startResp.data?.data?.id || startResp.data?.id;
                     if (runId) {
+                        addPostLog(`🏃 Started run: ${runId}`,'info');
+                    }
+                    if (!runId) {
+                        addPostLog(`⚠️ No runId returned for ${rec.id}; will fetch items via fallback endpoint`, 'warning');
+                    }
+
+                    // Poll run until finished to obtain datasetId and logs
+                    if (runId) {
+                        const runInfoUrl = `https://api.apify.com/v2/actor-runs/${encodeURIComponent(runId)}?token=${config.apifyToken}`;
+                        let status = 'STARTED';
+                        let attempts = 0;
+                        const maxAttempts = 60; // ~2 minutes at 2s
+                        while (attempts < maxAttempts) {
+                            attempts++;
+                            try {
+                                const ri = await axios.get(runInfoUrl, { timeout: 30000 });
+                                status = ri.data?.data?.status || status;
+                                datasetId = ri.data?.data?.defaultDatasetId || datasetId;
+                                if (status === 'SUCCEEDED' || status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') {
+                                    break;
+                                }
+                            } catch (e) {
+                                console.warn('ℹ️ Poll run info failed:', e.response?.status, e.message);
+                            }
+                            await new Promise(r => setTimeout(r, 2000));
+                        }
+                        addPostLog(`⏳ Run status: ${status?.toLowerCase?.() || status} (attempt ${attempts}/${maxAttempts})`, 'info');
+                        // If run succeeded but datasetId still missing, try a few more quick polls
+                        if (!datasetId && (status === 'SUCCEEDED' || status === 'COMPLETED')) {
+                            for (let extra = 1; extra <= 5 && !datasetId; extra++) {
+                                try {
+                                    const ri2 = await axios.get(runInfoUrl, { timeout: 15000 });
+                                    datasetId = ri2.data?.data?.defaultDatasetId || datasetId;
+                                } catch {}
+                                if (!datasetId) await new Promise(r => setTimeout(r, 1000));
+                            }
+                        }
+                        addPostLog(`🗂️ Dataset for ${rec.id}: ${datasetId || 'not provided'} (run: ${runId})`, datasetId ? 'info' : 'warning');
+                        // If datasetId still missing, stop scraping and notify webhook
+                        if (!datasetId) {
+                            try {
+                                await webhookService.triggerWebhook({
+                                    type: 'post_error',
+                                    phase: 'dataset-missing',
+                                    recordId: rec.id,
+                                    url: rec.url,
+                                    runId,
+                                    error: 'No datasetId returned from Apify run',
+                                    apifyErrorMessage: 'No datasetId returned from Apify run',
+                                    timestamp: new Date().toISOString()
+                                }, process.env.WEBHOOK_URL);
+                            } catch {}
+                            addPostLog(`⛔ No datasetId returned for ${rec.id}. Stopping post scraping.`, 'error');
+                            postScrapingStats.completed = true;
+                            postScrapingActive = false;
+                            return;
+                        }
+
+                        // Fetch run log and detect Apify warnings (e.g., redirected 10 times)
                         try {
                             const logRes = await axios.get(`https://api.apify.com/v2/actor-runs/${encodeURIComponent(runId)}/log`, {
                                 params: { token: config.apifyToken, stream: 0 },
@@ -359,7 +707,7 @@ async function runPostScrapingInBackground(config) {
                                 timeout: 120000
                             });
                             const logText = typeof logRes.data === 'string' ? logRes.data : String(logRes.data || '');
-                            const warnMatch = logText.match(/redirected\s+10\s+times\b/i);
+                            const warnMatch = logText.match(/redirected\s+10\s+times\b|too\s+many\s+redirects|not\s+logged\s+in|login\s+required|unauthorized|forbidden|\b401\b|\b403\b|cookie|li_at|session\s+expired/i);
                             if (warnMatch) {
                                 const webhookService = require('./services/webhookService');
                                 const details = {
@@ -375,6 +723,7 @@ async function runPostScrapingInBackground(config) {
                                 addPostLog(`⚠️ Warning detected for ${rec.id}: ${warnMatch[0]}. Stopping.`, 'warning');
                                 // Stop entire post scraping loop
                                 postScrapingStats.completed = true;
+                                postScrapingActive = false;
                                 return;
                             }
                         } catch (e) {
@@ -390,36 +739,44 @@ async function runPostScrapingInBackground(config) {
                     try {
                         await webhookService.triggerWebhook({
                             type: 'post_error',
-                            phase: 'run-sync',
+                            phase: 'start-run',
                             recordId: rec.id,
                             url: rec.url,
                             status,
                             error: data?.error?.message || apifyErr.message,
+                            apifyErrorMessage: data?.error?.message || apifyErr.message,
                             raw: data || null,
                             timestamp: new Date().toISOString()
                         }, process.env.WEBHOOK_URL);
                     } catch {}
+                    // Stop the entire session on any run start error
+                    if (status === 401 || status === 403) {
+                        try {
+                            await webhookService.triggerWebhook({
+                                type: 'post_warning',
+                                message: `Authentication failure (${status}). Cookies may be expired.`,
+                                recordId: rec.id,
+                                url: rec.url,
+                                status,
+                                raw: data || null,
+                                timestamp: new Date().toISOString()
+                            }, process.env.WEBHOOK_URL);
+                        } catch {}
+                        addPostLog(`⚠️ Auth failure for ${rec.id} (${status}). Stopping.`, 'warning');
+                    }
                     postScrapingStats.errors++;
-                    continue; // move to next record
+                    postScrapingStats.completed = true;
+                    postScrapingActive = false;
+                    return;
                 }
 
                 // Fetch items for this run
                 let items = [];
                 try {
-                    if (!datasetId) {
-                        const fallbackUrl = `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items?token=${config.apifyToken}`;
-                        const fbResp = await axios.post(fallbackUrl, apifyPayload, {
-                            headers: { 'Content-Type': 'application/json' },
-                            timeout: 600000
-                        });
-                        items = Array.isArray(fbResp.data) ? fbResp.data : [];
-                        addPostLog(`ℹ️ Fallback used for ${rec.id} (${rec.url}). Items: ${items.length}`, 'warning');
-                    } else {
-                        const itemsUrl = `https://api.apify.com/v2/datasets/${encodeURIComponent(datasetId)}/items?token=${config.apifyToken}&format=json`;
-                        const itemsResp = await axios.get(itemsUrl, { timeout: 300000 });
-                        items = Array.isArray(itemsResp.data) ? itemsResp.data : [];
-                        addPostLog(`📥 Retrieved ${items.length} items for ${rec.id} from dataset ${datasetId}`, 'info');
-                    }
+                    const itemsUrl = `https://api.apify.com/v2/datasets/${encodeURIComponent(datasetId)}/items?token=${config.apifyToken}&format=json`;
+                    const itemsResp = await axios.get(itemsUrl, { timeout: 300000 });
+                    items = Array.isArray(itemsResp.data) ? itemsResp.data : [];
+                    addPostLog(`📥 Retrieved ${items.length} items for ${rec.id} from dataset ${datasetId}`, 'info');
                 } catch (itemsErr) {
                     const status = itemsErr.response?.status;
                     const data = itemsErr.response?.data;
@@ -435,18 +792,38 @@ async function runPostScrapingInBackground(config) {
                             datasetId,
                             status,
                             error: data?.error?.message || itemsErr.message,
+                            apifyErrorMessage: data?.error?.message || itemsErr.message,
                             raw: data || null,
                             timestamp: new Date().toISOString()
                         }, process.env.WEBHOOK_URL);
                     } catch {}
                     postScrapingStats.errors++;
-                    continue;
+                    postScrapingStats.completed = true;
+                    postScrapingActive = false;
+                    return;
                 }
 
                 // Select first post (if any) and update the same record
                 const first = items[0];
                 if (!first) {
-                    addPostLog(`⚠️ No posts found for record ${rec.id}`, 'warning');
+                    // No output from Apify; stop and notify
+                    try {
+                        await webhookService.triggerWebhook({
+                            type: 'post_error',
+                            phase: 'no-output',
+                            recordId: rec.id,
+                            url: rec.url,
+                            runId,
+                            datasetId,
+                            error: 'No items returned from Apify dataset',
+                            apifyErrorMessage: 'No items returned from Apify dataset',
+                            timestamp: new Date().toISOString()
+                        }, process.env.WEBHOOK_URL);
+                    } catch {}
+                    addPostLog(`⛔ No items returned for ${rec.id}. Stopping post scraping.`, 'error');
+                    postScrapingStats.completed = true;
+                    postScrapingActive = false;
+                    return;
                 } else {
                     const updates = {};
                     updates[fldUrl] = first.url || '';
@@ -475,15 +852,20 @@ async function runPostScrapingInBackground(config) {
                                 recordId: rec.id,
                                 url: rec.url,
                                 error: saveErr.message,
+                                apifyErrorMessage: saveErr.message,
                                 timestamp: new Date().toISOString()
                             }, process.env.WEBHOOK_URL);
                         } catch {}
+                        // Stop on Airtable failure as requested
+                        postScrapingStats.completed = true;
+                        postScrapingActive = false;
+                        return;
                     }
                 }
 
-                // Mark processed and wait a bit to respect rate limits
+                // Mark processed and wait to respect rate limits (20s between records)
                 postScrapingStats.processed++;
-                await new Promise(r => setTimeout(r, 800));
+                await new Promise(r => setTimeout(r, 20000));
             } catch (err) {
                 postScrapingStats.errors++;
                 addPostLog(`❌ Unexpected error for ${rec.id}: ${err.message}`, 'error');
@@ -495,25 +877,35 @@ async function runPostScrapingInBackground(config) {
                         recordId: rec.id,
                         url: rec.url,
                         error: err.message,
+                        apifyErrorMessage: err.message,
                         timestamp: new Date().toISOString()
                     }, process.env.WEBHOOK_URL);
                 } catch {}
-            }
-        }
+                // Stop entire session on unexpected error
+                postScrapingStats.completed = true;
+                postScrapingActive = false;
+                return;
+    }
 
-        postScrapingStats.completed = true;
+    // end for-loop over records
+    }
+
+    postScrapingStats.completed = true;
+    postScrapingActive = false;
         addPostLog(`🎉 Completed. Processed ${postScrapingStats.processed}/${postScrapingStats.total}. Updated: ${postScrapingStats.posts}. Errors: ${postScrapingStats.errors}`, 'success');
     } catch (err) {
         console.error('Error in background post scraping:', err);
         addPostLog(`❌ Error: ${err.message}`, 'error');
-        postScrapingStats.errors++;
-        postScrapingStats.completed = true;
+    postScrapingStats.errors++;
+    postScrapingStats.completed = true;
+    postScrapingActive = false;
         // Notify webhook about top-level error
         try {
             await webhookService.triggerWebhook({
                 type: 'post_error',
                 phase: 'top-level',
                 error: err.message,
+                apifyErrorMessage: err.message,
                 timestamp: new Date().toISOString()
             }, process.env.WEBHOOK_URL);
         } catch {}
@@ -524,13 +916,9 @@ async function runPostScrapingInBackground(config) {
  * Stop post scraping session
  */
 app.post('/api/stop-post-scraping', (req, res) => {
-    if (postScrapingProcess) {
-        postScrapingProcess.kill();
-        postScrapingProcess = null;
-        addPostLog('⏹️ Post scraping process stopped by user', 'info');
-        postScrapingStats.completed = true;
-    }
-    return res.json({ status: 'stopped', message: 'Post scraping process stopped' });
+    postScrapingShouldStop = true;
+    addPostLog('⏹️ Stop requested by user. Will stop after current operation.', 'info');
+    return res.json({ status: 'stopping', message: 'Stop requested' });
 });
 
 /**
@@ -541,7 +929,7 @@ app.get('/api/post-status', (req, res) => {
     res.json({
         ...postScrapingStats,
         logs: recentLogs,
-        isRunning: postScrapingProcess !== null
+    isRunning: postScrapingActive
     });
     // Clear sent logs to avoid duplication
     postScrapingStats.logs = [];
