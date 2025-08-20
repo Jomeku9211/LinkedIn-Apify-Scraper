@@ -430,13 +430,18 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
             console.log(`🔍 First item keys: ${firstKeys.join(', ')}`);
         } catch {}
 
-        // Step 3: Process each profile and send to Airtable with rate limiting
+        // Step 3: Process each profile and send to Airtable with duplicate checking and rate limiting
         const results = [];
         const airtableService = require('./services/airtableService');
         const { mapApifyResponseToAirtable, validateAirtableData } = require('./utils/apifyDataMapper');
 
         // Rate limiting: Max 4 requests/second (safe margin below Airtable's 5 req/s limit)
         const RATE_LIMIT_DELAY = 250; // 250ms between requests = 4 req/s
+        
+        // Track duplicate stats
+        let duplicatesFound = 0;
+        let newProfilesAdded = 0;
+        let existingProfilesUpdated = 0;
         
         for (let i = 0; i < items.length; i++) {
             const profileData = items[i];
@@ -458,9 +463,57 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
                     continue;
                 }
 
-                // Send to Airtable with retry logic
+                // Check for duplicates using LinkedIn URL before sending to Airtable
                 const urlField = process.env.AIRTABLE_UNIQUE_URL_FIELD || 'linkedinUrl';
                 const urlValue = airtableData[urlField];
+                
+                if (!urlValue) {
+                    console.warn(`⚠️ Profile ${i + 1} has no LinkedIn URL - skipping duplicate check`);
+                    results.push({ 
+                        index: i, 
+                        success: false, 
+                        error: 'No LinkedIn URL found for duplicate checking' 
+                    });
+                    continue;
+                }
+
+                // Check if profile already exists in Airtable
+                console.log(`🔍 Checking for duplicate: ${urlValue}`);
+                let existingRecord = null;
+                try {
+                    existingRecord = await airtableService.findRecordByUrl(
+                        process.env.AIRTABLE_TOKEN,
+                        process.env.AIRTABLE_BASE_ID,
+                        process.env.AIRTABLE_TABLE_NAME,
+                        urlField,
+                        urlValue
+                    );
+                } catch (findError) {
+                    console.warn(`⚠️ Error checking for duplicates: ${findError.message}`);
+                    // Continue processing even if duplicate check fails
+                }
+
+                if (existingRecord) {
+                    console.log(`🔄 Duplicate found for profile ${i + 1}: ${profileData.firstName} ${profileData.lastName} (Record ID: ${existingRecord.id})`);
+                    duplicatesFound++;
+                    
+                    // Add to results as duplicate (not an error, just informational)
+                    results.push({ 
+                        index: i, 
+                        success: true, 
+                        profileName: `${profileData.firstName} ${profileData.lastName}`,
+                        airtableAction: 'duplicate_skipped',
+                        recordId: existingRecord.id,
+                        isDuplicate: true,
+                        duplicateMessage: `Profile already exists in Airtable (Record ID: ${existingRecord.id})`
+                    });
+                    
+                    console.log(`⏭️ Skipping duplicate profile ${i + 1}`);
+                    continue; // Skip to next profile
+                }
+
+                // No duplicate found - proceed with Airtable insertion/update
+                console.log(`✅ No duplicate found - proceeding with Airtable insertion for profile ${i + 1}`);
                 
                 let airtableResult;
                 let retryCount = 0;
@@ -468,23 +521,13 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
                 
                 while (retryCount <= maxRetries) {
                     try {
-                        if (urlValue) {
-                            airtableResult = await airtableService.updateOrInsertByUrl({
-                                airtableToken: process.env.AIRTABLE_TOKEN,
-                                baseId: process.env.AIRTABLE_BASE_ID,
-                                tableName: process.env.AIRTABLE_TABLE_NAME,
-                                urlField,
-                                urlValue,
-                                fields: airtableData
-                            });
-                        } else {
-                            airtableResult = await airtableService.insertRecord(
-                                airtableData,
-                                process.env.AIRTABLE_TOKEN,
-                                process.env.AIRTABLE_BASE_ID,
-                                process.env.AIRTABLE_TABLE_NAME
-                            );
-                        }
+                        // Always insert new record since we've confirmed it's not a duplicate
+                        airtableResult = await airtableService.insertRecord(
+                            airtableData,
+                            process.env.AIRTABLE_TOKEN,
+                            process.env.AIRTABLE_BASE_ID,
+                            process.env.AIRTABLE_TABLE_NAME
+                        );
                         
                         // Success - break out of retry loop
                         break;
@@ -516,15 +559,23 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
                     }
                 }
 
+                // Track success stats
+                if (airtableResult.action === 'inserted') {
+                    newProfilesAdded++;
+                } else if (airtableResult.action === 'updated') {
+                    existingProfilesUpdated++;
+                }
+
                 results.push({ 
                     index: i, 
                     success: true, 
                     profileName: `${profileData.firstName} ${profileData.lastName}`,
                     airtableAction: airtableResult.action || 'inserted',
-                    recordId: airtableResult.record?.id || 'n/a'
+                    recordId: airtableResult.record?.id || 'n/a',
+                    isDuplicate: false
                 });
 
-                console.log(`✅ Profile ${i + 1} processed successfully`);
+                console.log(`✅ Profile ${i + 1} processed successfully (${airtableResult.action})`);
 
                 // Rate limiting delay between requests (except for the last one)
                 if (i < items.length - 1) {
@@ -544,12 +595,14 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
 
         const successCount = results.filter(r => r.success).length;
         const errorCount = results.filter(r => !r.success).length;
+        const duplicateCount = results.filter(r => r.isDuplicate).length;
+        const newProfilesCount = results.filter(r => r.success && !r.isDuplicate).length;
 
-        console.log(`🎉 Manual Profile Scraper completed: ${successCount} success, ${errorCount} errors`);
+        console.log(`🎉 Manual Profile Scraper completed: ${successCount} success, ${errorCount} errors, ${duplicateCount} duplicates skipped`);
 
         return res.json({
             success: true,
-            message: `Processed ${items.length} profile(s): ${successCount} success, ${errorCount} errors`,
+            message: `Processed ${items.length} profile(s): ${newProfilesCount} new, ${duplicateCount} duplicates skipped, ${errorCount} errors`,
             runStatus: 'SUCCEEDED',
             datasetId,
             itemsCount: items.length,
@@ -557,6 +610,11 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
             totalProfiles: items.length,
             successCount,
             errorCount,
+            duplicateCount,
+            newProfilesCount,
+            duplicatesFound,
+            newProfilesAdded,
+            existingProfilesUpdated,
             results
         });
 
