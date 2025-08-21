@@ -373,6 +373,7 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
     try {
         const { runId, apifyToken } = req.body || {};
         
+        // Enhanced input validation
         if (!runId || !apifyToken) {
             return res.status(400).json({ 
                 success: false, 
@@ -380,28 +381,86 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
             });
         }
 
+        // Validate runId format (should be alphanumeric)
+        if (!/^[a-zA-Z0-9]+$/.test(runId)) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Invalid runId format. Must be alphanumeric.' 
+            });
+        }
+
+        // Validate apifyToken format (should start with apify_api_)
+        if (!apifyToken.startsWith('apify_api_')) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Invalid Apify token format. Must start with "apify_api_"' 
+            });
+        }
+
         console.log(`🔧 Manual Profile Scraper: Processing Run ID=${runId}, token=${maskToken(apifyToken)}`);
 
-        // Step 1: Get run details from Apify
+        // Step 1: Get run details from Apify with enhanced error handling
         const runDetailsUrl = `https://api.apify.com/v2/actor-runs/${runId}`;
         console.log(`🌐 GET ${runDetailsUrl}?token=${maskToken(apifyToken)}`);
-        const runResponse = await axios.get(runDetailsUrl, {
-            params: { token: apifyToken },
-            timeout: 30000
-        });
+        
+        let runResponse;
+        try {
+            runResponse = await axios.get(runDetailsUrl, {
+                params: { token: apifyToken },
+                timeout: 45000, // Increased timeout to 45s
+                headers: {
+                    'User-Agent': 'LinkedIn-Scraper-Dashboard/1.0'
+                }
+            });
+        } catch (runError) {
+            if (runError.code === 'ECONNABORTED') {
+                throw new Error('Apify API request timed out. Please try again.');
+            }
+            if (runError.response?.status === 401) {
+                throw new Error('Invalid Apify API token. Please check your token.');
+            }
+            if (runError.response?.status === 404) {
+                throw new Error(`Run ID ${runId} not found. Please check the run ID.`);
+            }
+            if (runError.response?.status >= 500) {
+                throw new Error('Apify service is temporarily unavailable. Please try again later.');
+            }
+            throw new Error(`Failed to fetch run details: ${runError.message}`);
+        }
 
-        const runData = runResponse.data?.data;
+        const runData = runResponse.data?.data || runResponse.data;
         if (!runData) {
-            throw new Error('Invalid response from Apify API');
+            throw new Error('Invalid response structure from Apify API');
         }
 
         console.log(`📊 Run Status: ${runData.status}`);
         console.log(`📊 Dataset ID: ${runData.defaultDatasetId}`);
 
+        // Enhanced status checking
+        if (runData.status === 'FAILED') {
+            return res.json({ 
+                success: false, 
+                error: `Run failed. Please check Apify dashboard for details.`,
+                runStatus: runData.status,
+                datasetId: runData.defaultDatasetId || null,
+                meta: runData.meta || {}
+            });
+        }
+
+        if (runData.status === 'RUNNING') {
+            return res.json({ 
+                success: false, 
+                error: `Run is still in progress. Please wait for completion.`,
+                runStatus: runData.status,
+                datasetId: runData.defaultDatasetId || null,
+                progress: runData.meta?.progress || 0
+            });
+        }
+
         if (runData.status !== 'SUCCEEDED') {
             return res.json({ 
                 success: false, 
-                error: `Run not completed. Status: ${runData.status}`,
+                error: `Run not completed. Current status: ${runData.status}`,
                 runStatus: runData.status,
                 datasetId: runData.defaultDatasetId || null
             });
@@ -412,108 +471,223 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
             throw new Error('No datasetId returned from profile scraper run');
         }
 
-        // Step 2: Get dataset items from Apify
+        // Step 2: Get dataset items from Apify with enhanced error handling
         console.log(`🌐 GET https://api.apify.com/v2/datasets/${datasetId}/items?token=${maskToken(apifyToken)}&format=json`);
-        const itemsResponse = await axios.get(`https://api.apify.com/v2/datasets/${datasetId}/items`, {
-            params: { token: apifyToken, format: 'json' },
-            timeout: 30000
-        });
+        
+        let itemsResponse;
+        try {
+            itemsResponse = await axios.get(`https://api.apify.com/v2/datasets/${datasetId}/items`, {
+                params: { token: apifyToken, format: 'json' },
+                timeout: 60000, // Increased timeout to 60s for dataset retrieval
+                headers: {
+                    'User-Agent': 'LinkedIn-Scraper-Dashboard/1.0'
+                }
+            });
+        } catch (itemsError) {
+            if (itemsError.code === 'ECONNABORTED') {
+                throw new Error('Dataset retrieval timed out. Please try again.');
+            }
+            if (itemsError.response?.status === 401) {
+                throw new Error('Invalid Apify API token for dataset access.');
+            }
+            if (itemsError.response?.status === 404) {
+                throw new Error(`Dataset ${datasetId} not found or access denied.`);
+            }
+            throw new Error(`Failed to retrieve dataset: ${itemsError.message}`);
+        }
 
         const items = Array.isArray(itemsResponse.data) ? itemsResponse.data : [];
         if (items.length === 0) {
-            throw new Error('No data returned from profile scraper');
+            return res.json({
+                success: false,
+                error: 'No profiles found in the dataset. The scraping may not have completed successfully.',
+                runStatus: 'SUCCEEDED',
+                datasetId,
+                itemsCount: 0
+            });
+        }
+
+        // Validate items structure
+        if (!items[0] || typeof items[0] !== 'object') {
+            throw new Error('Invalid data structure returned from Apify dataset');
         }
 
         console.log(`✅ Retrieved ${items.length} profile(s) from Apify`);
         try {
             const firstKeys = Object.keys(items[0] || {});
             console.log(`🔍 First item keys: ${firstKeys.join(', ')}`);
-        } catch {}
+            
+            // Check for essential fields
+            const essentialFields = ['firstName', 'lastName', 'publicIdentifier'];
+            const missingFields = essentialFields.filter(field => !items[0][field]);
+            if (missingFields.length > 0) {
+                console.warn(`⚠️ Missing essential fields in first item: ${missingFields.join(', ')}`);
+            }
+        } catch (keyError) {
+            console.warn(`⚠️ Could not analyze item structure: ${keyError.message}`);
+        }
 
-        // Step 3: Process each profile and send to Airtable with duplicate checking and rate limiting
+        // Step 3: Process each profile with enhanced error handling and rate limiting
         const results = [];
         const airtableService = require('./services/airtableService');
         const { mapApifyResponseToAirtable, validateAirtableData } = require('./utils/apifyDataMapper');
 
-        // Rate limiting: Max 4 requests/second (safe margin below Airtable's 5 req/s limit)
+        // Enhanced rate limiting: Max 4 requests/second with jitter
         const RATE_LIMIT_DELAY = 250; // 250ms between requests = 4 req/s
+        const JITTER_RANGE = 50; // Add ±50ms jitter to avoid thundering herd
         
-        // Track duplicate stats
+        // Track comprehensive stats
         let duplicatesFound = 0;
         let newProfilesAdded = 0;
         let existingProfilesUpdated = 0;
+        let validationFailures = 0;
+        let processingErrors = 0;
         
+        // Process profiles with enhanced error handling
         for (let i = 0; i < items.length; i++) {
             const profileData = items[i];
+            const profileIndex = i + 1;
+            
             try {
-                console.log(`🔄 Processing profile ${i + 1}/${items.length}: ${profileData.firstName} ${profileData.lastName}`);
-
-                // Map to Airtable format
-                const airtableData = mapApifyResponseToAirtable(profileData, profileData.linkedinUrl || profileData.url);
-                
-                // Validate data
-                const isValid = validateAirtableData(airtableData, ['firstName', 'lastName']);
-                if (!isValid) {
-                    console.warn(`⚠️ Profile ${i + 1} validation failed`);
+                // Validate profile data structure
+                if (!profileData || typeof profileData !== 'object') {
+                    console.warn(`⚠️ Profile ${profileIndex}: Invalid data structure`);
                     results.push({ 
                         index: i, 
                         success: false, 
-                        error: 'Data validation failed' 
+                        error: 'Invalid profile data structure',
+                        profileIndex
                     });
+                    validationFailures++;
                     continue;
                 }
 
-                // Check for duplicates using LinkedIn URL before sending to Airtable
+                // Check for minimum required fields
+                if (!profileData.firstName && !profileData.lastName && !profileData.publicIdentifier) {
+                    console.warn(`⚠️ Profile ${profileIndex}: Missing all identification fields`);
+                    results.push({ 
+                        index: i, 
+                        success: false, 
+                        error: 'Missing identification fields (firstName, lastName, publicIdentifier)',
+                        profileIndex
+                    });
+                    validationFailures++;
+                    continue;
+                }
+
+                const profileName = `${profileData.firstName || 'Unknown'} ${profileData.lastName || 'Unknown'}`.trim();
+                console.log(`🔄 Processing profile ${profileIndex}/${items.length}: ${profileName}`);
+
+                // Map to Airtable format with error handling
+                let airtableData;
+                try {
+                    airtableData = mapApifyResponseToAirtable(profileData, profileData.linkedinUrl || profileData.url);
+                } catch (mappingError) {
+                    console.error(`❌ Mapping error for profile ${profileIndex}: ${mappingError.message}`);
+                    results.push({ 
+                        index: i, 
+                        success: false, 
+                        error: `Data mapping failed: ${mappingError.message}`,
+                        profileIndex,
+                        profileName
+                    });
+                    processingErrors++;
+                    continue;
+                }
+                
+                // Enhanced data validation
+                const requiredFields = ['firstName', 'lastName'];
+                const isValid = validateAirtableData(airtableData, requiredFields);
+                if (!isValid) {
+                    console.warn(`⚠️ Profile ${profileIndex} validation failed for required fields: ${requiredFields.join(', ')}`);
+                    results.push({ 
+                        index: i, 
+                        success: false, 
+                        error: `Data validation failed for required fields: ${requiredFields.join(', ')}`,
+                        profileIndex,
+                        profileName
+                    });
+                    validationFailures++;
+                    continue;
+                }
+
+                // Enhanced duplicate checking with fallback URL construction
                 const urlField = process.env.AIRTABLE_UNIQUE_URL_FIELD || 'linkedinUrl';
-                const urlValue = airtableData[urlField];
+                let urlValue = airtableData[urlField];
+                
+                // Fallback URL construction if linkedinUrl is missing
+                if (!urlValue && profileData.publicIdentifier) {
+                    urlValue = `https://www.linkedin.com/in/${profileData.publicIdentifier}/`;
+                    airtableData[urlField] = urlValue;
+                    console.log(`🔧 Constructed fallback URL for profile ${profileIndex}: ${urlValue}`);
+                }
                 
                 if (!urlValue) {
-                    console.warn(`⚠️ Profile ${i + 1} has no LinkedIn URL - skipping duplicate check`);
+                    console.warn(`⚠️ Profile ${profileIndex} has no LinkedIn URL - skipping duplicate check`);
                     results.push({ 
                         index: i, 
                         success: false, 
-                        error: 'No LinkedIn URL found for duplicate checking' 
+                        error: 'No LinkedIn URL found for duplicate checking',
+                        profileIndex,
+                        profileName
                     });
+                    validationFailures++;
                     continue;
                 }
 
-                // Check if profile already exists in Airtable
+                // Check if profile already exists in Airtable with retry logic
                 console.log(`🔍 Checking for duplicate: ${urlValue}`);
                 let existingRecord = null;
-                try {
-                    existingRecord = await airtableService.findRecordByUrl(
-                        process.env.AIRTABLE_TOKEN,
-                        process.env.AIRTABLE_BASE_ID,
-                        process.env.AIRTABLE_TABLE_NAME,
-                        urlField,
-                        urlValue
-                    );
-                } catch (findError) {
-                    console.warn(`⚠️ Error checking for duplicates: ${findError.message}`);
-                    // Continue processing even if duplicate check fails
+                let duplicateCheckRetries = 0;
+                const maxDuplicateCheckRetries = 2;
+                
+                while (duplicateCheckRetries <= maxDuplicateCheckRetries) {
+                    try {
+                        existingRecord = await airtableService.findRecordByUrl(
+                            process.env.AIRTABLE_TOKEN,
+                            process.env.AIRTABLE_BASE_ID,
+                            process.env.AIRTABLE_TABLE_NAME,
+                            urlField,
+                            urlValue
+                        );
+                        break; // Success - exit retry loop
+                    } catch (findError) {
+                        duplicateCheckRetries++;
+                        console.warn(`⚠️ Duplicate check attempt ${duplicateCheckRetries}/${maxDuplicateCheckRetries} failed: ${findError.message}`);
+                        
+                        if (duplicateCheckRetries <= maxDuplicateCheckRetries) {
+                            // Wait before retry with exponential backoff
+                            const waitTime = Math.min(1000 * Math.pow(2, duplicateCheckRetries - 1), 5000);
+                            console.log(`⏳ Waiting ${waitTime}ms before duplicate check retry...`);
+                            await new Promise(resolve => setTimeout(resolve, waitTime));
+                        } else {
+                            console.error(`❌ Duplicate check failed after ${maxDuplicateCheckRetries} attempts for profile ${profileIndex}`);
+                            // Continue processing even if duplicate check fails
+                        }
+                    }
                 }
 
                 if (existingRecord) {
-                    console.log(`🔄 Duplicate found for profile ${i + 1}: ${profileData.firstName} ${profileData.lastName} (Record ID: ${existingRecord.id})`);
+                    console.log(`🔄 Duplicate found for profile ${profileIndex}: ${profileName} (Record ID: ${existingRecord.id})`);
                     duplicatesFound++;
                     
-                    // Add to results as duplicate (not an error, just informational)
                     results.push({ 
                         index: i, 
                         success: true, 
-                        profileName: `${profileData.firstName} ${profileData.lastName}`,
+                        profileName,
                         airtableAction: 'duplicate_skipped',
                         recordId: existingRecord.id,
                         isDuplicate: true,
-                        duplicateMessage: `Profile already exists in Airtable (Record ID: ${existingRecord.id})`
+                        duplicateMessage: `Profile already exists in Airtable (Record ID: ${existingRecord.id})`,
+                        profileIndex
                     });
                     
-                    console.log(`⏭️ Skipping duplicate profile ${i + 1}`);
+                    console.log(`⏭️ Skipping duplicate profile ${profileIndex}`);
                     continue; // Skip to next profile
                 }
 
                 // No duplicate found - proceed with Airtable insertion/update
-                console.log(`✅ No duplicate found - proceeding with Airtable insertion for profile ${i + 1}`);
+                console.log(`✅ No duplicate found - proceeding with Airtable insertion for profile ${profileIndex}`);
                 
                 let airtableResult;
                 let retryCount = 0;
@@ -536,9 +710,9 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
                         retryCount++;
                         
                         if (airtableError.response?.status === 429) {
-                            // Rate limit exceeded - wait longer
+                            // Rate limit exceeded - wait longer with exponential backoff
                             const waitTime = Math.max(30000, retryCount * 30000); // 30s, 60s, 90s
-                            console.log(`⏳ Rate limit (429) hit for profile ${i + 1}. Waiting ${waitTime/1000}s before retry ${retryCount}/${maxRetries}`);
+                            console.log(`⏳ Rate limit (429) hit for profile ${profileIndex}. Waiting ${waitTime/1000}s before retry ${retryCount}/${maxRetries}`);
                             
                             if (retryCount <= maxRetries) {
                                 await new Promise(resolve => setTimeout(resolve, waitTime));
@@ -547,9 +721,9 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
                                 throw new Error(`Rate limit exceeded after ${maxRetries} retries`);
                             }
                         } else if (retryCount <= maxRetries) {
-                            // Other error - wait a bit and retry
-                            const waitTime = retryCount * 2000; // 2s, 4s, 6s
-                            console.log(`⚠️ Airtable error for profile ${i + 1}. Retrying in ${waitTime/1000}s (${retryCount}/${maxRetries})`);
+                            // Other error - wait a bit and retry with exponential backoff
+                            const waitTime = Math.min(retryCount * 2000, 10000); // 2s, 4s, 6s, 8s, 10s max
+                            console.log(`⚠️ Airtable error for profile ${profileIndex}. Retrying in ${waitTime/1000}s (${retryCount}/${maxRetries})`);
                             await new Promise(resolve => setTimeout(resolve, waitTime));
                             continue;
                         } else {
@@ -569,36 +743,45 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
                 results.push({ 
                     index: i, 
                     success: true, 
-                    profileName: `${profileData.firstName} ${profileData.lastName}`,
+                    profileName,
                     airtableAction: airtableResult.action || 'inserted',
                     recordId: airtableResult.record?.id || 'n/a',
-                    isDuplicate: false
+                    isDuplicate: false,
+                    profileIndex
                 });
 
-                console.log(`✅ Profile ${i + 1} processed successfully (${airtableResult.action})`);
+                console.log(`✅ Profile ${profileIndex} processed successfully (${airtableResult.action})`);
 
-                // Rate limiting delay between requests (except for the last one)
+                // Enhanced rate limiting with jitter to avoid thundering herd
                 if (i < items.length - 1) {
-                    console.log(`⏱️ Rate limiting: Waiting ${RATE_LIMIT_DELAY}ms before next request...`);
-                    await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_DELAY));
+                    const jitter = Math.random() * JITTER_RANGE - (JITTER_RANGE / 2);
+                    const actualDelay = Math.max(100, RATE_LIMIT_DELAY + jitter);
+                    console.log(`⏱️ Rate limiting: Waiting ${Math.round(actualDelay)}ms before next request...`);
+                    await new Promise(resolve => setTimeout(resolve, actualDelay));
                 }
 
             } catch (profileError) {
-                console.error(`❌ Error processing profile ${i + 1}:`, profileError.message);
+                console.error(`❌ Error processing profile ${profileIndex}:`, profileError.message);
                 results.push({ 
                     index: i, 
                     success: false, 
-                    error: profileError.message 
+                    error: profileError.message,
+                    profileIndex,
+                    profileName: profileData?.firstName && profileData?.lastName ? 
+                        `${profileData.firstName} ${profileData.lastName}` : 'Unknown'
                 });
+                processingErrors++;
             }
         }
 
+        // Enhanced final statistics
         const successCount = results.filter(r => r.success).length;
         const errorCount = results.filter(r => !r.success).length;
         const duplicateCount = results.filter(r => r.isDuplicate).length;
         const newProfilesCount = results.filter(r => r.success && !r.isDuplicate).length;
 
         console.log(`🎉 Manual Profile Scraper completed: ${successCount} success, ${errorCount} errors, ${duplicateCount} duplicates skipped`);
+        console.log(`📊 Detailed stats: ${newProfilesAdded} new profiles, ${existingProfilesUpdated} updated, ${validationFailures} validation failures, ${processingErrors} processing errors`);
 
         return res.json({
             success: true,
@@ -615,20 +798,53 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
             duplicatesFound,
             newProfilesAdded,
             existingProfilesUpdated,
-            results
+            validationFailures,
+            processingErrors,
+            results,
+            processingSummary: {
+                total: items.length,
+                successful: successCount,
+                failed: errorCount,
+                duplicates: duplicateCount,
+                newProfiles: newProfilesCount,
+                validationIssues: validationFailures,
+                processingIssues: processingErrors
+            }
         });
 
     } catch (error) {
         const statusCode = error.response?.status || 500;
         const apiMessage = error.response?.data?.error || error.response?.data?.message;
+        
         console.error(`❌ Manual Profile Scraper error (${statusCode}):`, error.message);
         if (apiMessage) console.error('   ↳ API says:', apiMessage);
-        return res.status(500).json({ 
+        
+        // Enhanced error response with more context
+        const errorResponse = {
             success: false, 
             error: error.message,
             statusCode,
-            apifyMessage: apiMessage || null
-        });
+            apifyMessage: apiMessage || null,
+            timestamp: new Date().toISOString(),
+            errorType: error.code || 'UNKNOWN_ERROR'
+        };
+        
+        // Add specific error handling for common issues
+        if (error.code === 'ECONNABORTED') {
+            errorResponse.error = 'Request timed out. Please try again.';
+            errorResponse.suggestion = 'Check your internet connection and try again.';
+        } else if (error.code === 'ENOTFOUND') {
+            errorResponse.error = 'Network error. Please check your internet connection.';
+            errorResponse.suggestion = 'Verify your internet connection and try again.';
+        } else if (statusCode === 401) {
+            errorResponse.suggestion = 'Please verify your Apify API token.';
+        } else if (statusCode === 404) {
+            errorResponse.suggestion = 'Please verify the Run ID exists and is accessible.';
+        } else if (statusCode >= 500) {
+            errorResponse.suggestion = 'Apify service may be temporarily unavailable. Please try again later.';
+        }
+        
+        return res.status(500).json(errorResponse);
     }
 });
 
