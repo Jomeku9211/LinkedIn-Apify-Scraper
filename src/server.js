@@ -22,16 +22,64 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser(process.env.SESSION_SECRET || 'change-me'));
 
-// Simple auth middleware with signed cookie
+// Simple auth middleware with signed cookie and session timeout
 const AUTH_USER = 'krishna';
 const AUTH_PASS = 'maruti';
 const LOGIN_PATHS = new Set(['/login', '/logout', '/public/login.html']);
+const SESSION_TIMEOUT = 1000 * 60 * 30; // 30 minutes of inactivity
+const AUTO_LOGIN_DURATION = 1000 * 60 * 60 * 24 * 7; // 7 days for auto-login
+
+// Session store for tracking user activity
+const userSessions = new Map();
 
 function isAuthed(req) {
     try {
-        return req.signedCookies && req.signedCookies.auth === 'ok';
+        const authCookie = req.signedCookies && req.signedCookies.auth;
+        if (!authCookie) return false;
+        
+        // Check if session exists and is valid
+        const sessionData = userSessions.get(authCookie);
+        if (!sessionData) return false;
+        
+        // Check if session has expired due to inactivity
+        const now = Date.now();
+        if (now - sessionData.lastActivity > SESSION_TIMEOUT) {
+            // Session expired due to inactivity
+            userSessions.delete(authCookie);
+            return false;
+        }
+        
+        // Update last activity
+        sessionData.lastActivity = now;
+        return true;
     } catch {
         return false;
+    }
+}
+
+function createSession() {
+    const sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const now = Date.now();
+    
+    userSessions.set(sessionId, {
+        userId: AUTH_USER,
+        createdAt: now,
+        lastActivity: now,
+        expiresAt: now + AUTO_LOGIN_DURATION
+    });
+    
+    // Clean up expired sessions periodically
+    cleanupExpiredSessions();
+    
+    return sessionId;
+}
+
+function cleanupExpiredSessions() {
+    const now = Date.now();
+    for (const [sessionId, sessionData] of userSessions.entries()) {
+        if (now > sessionData.expiresAt) {
+            userSessions.delete(sessionId);
+        }
     }
 }
 
@@ -43,15 +91,73 @@ app.get('/login', (req, res) => {
 app.post('/login', (req, res) => {
     const { username, password } = req.body || {};
     if (username === AUTH_USER && password === AUTH_PASS) {
-        res.cookie('auth', 'ok', { httpOnly: true, sameSite: 'lax', signed: true, secure: false, maxAge: 1000 * 60 * 60 * 8 });
+        const sessionId = createSession();
+        res.cookie('auth', sessionId, { 
+            httpOnly: true, 
+            sameSite: 'lax', 
+            signed: true, 
+            secure: false, 
+            maxAge: AUTO_LOGIN_DURATION 
+        });
         return res.redirect('/');
     }
     return res.redirect('/login?error=1');
 });
 
 app.post('/logout', (req, res) => {
+    const authCookie = req.signedCookies && req.signedCookies.auth;
+    if (authCookie) {
+        userSessions.delete(authCookie);
+    }
     res.clearCookie('auth');
     res.redirect('/login');
+});
+
+// Session activity endpoint for keeping session alive
+app.post('/api/session-activity', (req, res) => {
+    const authCookie = req.signedCookies && req.signedCookies.auth;
+    if (authCookie && userSessions.has(authCookie)) {
+        const sessionData = userSessions.get(authCookie);
+        sessionData.lastActivity = Date.now();
+        res.json({ 
+            success: true, 
+            sessionActive: true,
+            lastActivity: sessionData.lastActivity,
+            expiresAt: sessionData.expiresAt
+        });
+    } else {
+        res.json({ 
+            success: false, 
+            sessionActive: false,
+            message: 'Session not found or expired'
+        });
+    }
+});
+
+// Session status endpoint
+app.get('/api/session-status', (req, res) => {
+    const authCookie = req.signedCookies && req.signedCookies.auth;
+    if (authCookie && userSessions.has(authCookie)) {
+        const sessionData = userSessions.get(authCookie);
+        const now = Date.now();
+        const timeUntilTimeout = Math.max(0, SESSION_TIMEOUT - (now - sessionData.lastActivity));
+        const timeUntilExpiry = Math.max(0, sessionData.expiresAt - now);
+        
+        res.json({ 
+            success: true, 
+            sessionActive: true,
+            lastActivity: sessionData.lastActivity,
+            timeUntilTimeout: Math.ceil(timeUntilTimeout / 1000), // seconds
+            timeUntilExpiry: Math.ceil(timeUntilExpiry / 1000), // seconds
+            sessionTimeout: Math.ceil(SESSION_TIMEOUT / 1000) // seconds
+        });
+    } else {
+        res.json({ 
+            success: false, 
+            sessionActive: false,
+            message: 'Session not found or expired'
+        });
+    }
 });
 
 // Protect everything else (APIs and static dashboard) except login

@@ -41,14 +41,35 @@
   .btn { width:100%; padding:10px 12px; border:none; border-radius:999px; background:var(--brand-accent); color:#fff; font-weight:700; cursor:pointer; font-family:'Poppins', sans-serif; transition:opacity .2s, box-shadow .2s; }
   .btn:hover { opacity:.96; box-shadow:0 6px 14px rgba(241,106,36,0.25); }
   .error { background:#FCE8DE; border:1px solid var(--brand-accent); color:#7a2e12; padding:10px 12px; border-radius:10px; margin-bottom:14px; font-size:13px; }
-    .hint { font-size:12px; color:#2c426b99; margin-top:10px; }
+  .error.expired { background:#FFF3CD; border:1px solid #FFC107; color:#856404; }
+  .error.logout { background:#D1ECF1; border:1px solid #17A2B8; color:#0C5460; }
+  .hint { font-size:12px; color:#2c426b99; margin-top:10px; }
   </style>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       const params = new URLSearchParams(window.location.search);
+      
+      // Handle different error types
       if (params.get('error') === '1') {
         const box = document.getElementById('err');
         box.style.display = 'block';
+        box.textContent = 'Invalid credentials. Try again.';
+      }
+      
+      // Handle expired session
+      if (params.get('expired') === '1') {
+        const box = document.getElementById('err');
+        box.style.display = 'block';
+        box.textContent = 'Your session has expired due to inactivity. Please log in again.';
+        box.className = 'error expired';
+      }
+      
+      // Handle logout
+      if (params.get('logout') === '1') {
+        const box = document.getElementById('err');
+        box.style.display = 'block';
+        box.textContent = 'You have been successfully logged out.';
+        box.className = 'error logout';
       }
     });
   </script>
