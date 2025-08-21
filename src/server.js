@@ -26,8 +26,9 @@ app.use(cookieParser(process.env.SESSION_SECRET || 'change-me'));
 const AUTH_USER = 'krishna';
 const AUTH_PASS = 'maruti';
 const LOGIN_PATHS = new Set(['/login', '/logout', '/public/login.html']);
-const SESSION_TIMEOUT = 1000 * 60 * 30; // 30 minutes of inactivity
-const AUTO_LOGIN_DURATION = 1000 * 60 * 60 * 24 * 7; // 7 days for auto-login
+const SESSION_TIMEOUT = 1000 * 60 * 60 * 12; // 12 hours of inactivity
+const AUTO_LOGIN_DURATION = 1000 * 60 * 60 * 12; // 12 hours persistent session
+const AUTO_LOGIN_ON_START = process.env.AUTO_LOGIN_ON_START !== 'false'; // default: enabled
 
 // Session store for tracking user activity
 const userSessions = new Map();
@@ -163,6 +164,19 @@ app.get('/api/session-status', (req, res) => {
 // Protect everything else (APIs and static dashboard) except login
 app.use((req, res, next) => {
     if (LOGIN_PATHS.has(req.path) || req.path.startsWith('/public/login')) return next();
+    // Auto-login on first access if enabled
+    if (!isAuthed(req) && AUTO_LOGIN_ON_START) {
+        const sessionId = createSession();
+        res.cookie('auth', sessionId, {
+            httpOnly: true,
+            sameSite: 'lax',
+            signed: true,
+            secure: false,
+            maxAge: AUTO_LOGIN_DURATION
+        });
+        // Treat this request as authenticated
+        return next();
+    }
     if (isAuthed(req)) return next();
     // Allow static assets needed by login page
     if (req.path.startsWith('/favicon') || req.path.startsWith('/robots.txt')) return next();
