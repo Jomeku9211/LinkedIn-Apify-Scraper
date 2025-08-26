@@ -64,16 +64,31 @@ async function processProfile(profileUrl, index, total) {
       console.log(`   ${key}: ${typeof value === 'string' && value.length > 50 ? value.substring(0, 50) + '...' : value}`);
     });
 
-    // Insert profile data into Airtable
+    // Upsert profile data into Airtable (update existing by URL or insert new)
     try {
-      console.log('📤 Sending data to Airtable...');
-      await airtableService.insertRecord(
-        airtableData,
-        AIRTABLE_TOKEN, 
-        AIRTABLE_BASE_ID, 
-        AIRTABLE_TABLE_NAME
-      );
-      console.log('✅ Successfully inserted into Airtable');
+      console.log('📤 Upserting data to Airtable (match by URL)...');
+      const urlField = process.env.AIRTABLE_UNIQUE_URL_FIELD || 'linkedinUrl';
+      const urlValue = airtableData[urlField];
+      if (!urlValue) {
+        console.warn(`⚠️ No value for unique URL field "${urlField}"; falling back to insert.`);
+        await airtableService.insertRecord(
+          airtableData,
+          AIRTABLE_TOKEN,
+          AIRTABLE_BASE_ID,
+          AIRTABLE_TABLE_NAME
+        );
+        console.log('✅ Inserted (no unique URL value available)');
+      } else {
+        const result = await airtableService.updateOrInsertByUrl({
+          airtableToken: AIRTABLE_TOKEN,
+          baseId: AIRTABLE_BASE_ID,
+          tableName: AIRTABLE_TABLE_NAME,
+          urlField,
+          urlValue,
+          fields: airtableData
+        });
+        console.log(`✅ Airtable ${result.action} record with ${urlField}=${urlValue}. ID: ${result.record?.id || 'n/a'}`);
+      }
     } catch (airtableError) {
       console.error('❌ Error during Airtable insertion:', airtableError.message);
       throw airtableError;

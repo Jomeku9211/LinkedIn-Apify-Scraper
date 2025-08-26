@@ -662,6 +662,15 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
         let existingProfilesUpdated = 0;
         let validationFailures = 0;
         let processingErrors = 0;
+        let spreadsheetRowsMarked = 0;
+        
+        // Get spreadsheet view ID for marking rows as done
+        const spreadsheetViewId = process.env.AIRTABLE_VIEW_ID;
+        const spreadsheetTableName = process.env.AIRTABLE_TABLE_NAME;
+        const doneFieldName = process.env.AIRTABLE_DONE_FIELD || 'Status';
+        const doneFieldValue = process.env.AIRTABLE_DONE_VALUE || 'Done';
+        
+        console.log(`📋 Spreadsheet integration: View ID: ${spreadsheetViewId}, Table: ${spreadsheetTableName}, Done Field: ${doneFieldName}, Value: ${doneFieldValue}`);
         
         // Process profiles with enhanced error handling
         for (let i = 0; i < items.length; i++) {
@@ -860,15 +869,89 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
                     existingProfilesUpdated++;
                 }
 
-                results.push({ 
-                    index: i, 
-                    success: true, 
-                    profileName,
-                    airtableAction: airtableResult.action || 'inserted',
-                    recordId: airtableResult.record?.id || 'n/a',
-                    isDuplicate: false,
-                    profileIndex
-                });
+                // NEW FEATURE: Mark corresponding row in spreadsheet as "done"
+                if (spreadsheetViewId && spreadsheetTableName) {
+                    try {
+                        console.log(`📋 Looking for row in spreadsheet to mark as done for: ${urlValue}`);
+                        
+                        // Find the row in the spreadsheet by LinkedIn URL
+                        const spreadsheetRecord = await airtableService.findRecordByUrl(
+                            process.env.AIRTABLE_TOKEN,
+                            process.env.AIRTABLE_BASE_ID,
+                            spreadsheetTableName,
+                            urlField,
+                            urlValue
+                        );
+                        
+                        if (spreadsheetRecord) {
+                            console.log(`✅ Found spreadsheet row (ID: ${spreadsheetRecord.id}) for profile: ${profileName}`);
+                            
+                            // Mark the row as done
+                            await airtableService.updateRecord(
+                                spreadsheetRecord.id,
+                                { [doneFieldName]: doneFieldValue },
+                                process.env.AIRTABLE_TOKEN,
+                                process.env.AIRTABLE_BASE_ID,
+                                spreadsheetTableName
+                            );
+                            
+                            console.log(`✅ Marked spreadsheet row as done for profile: ${profileName}`);
+                            spreadsheetRowsMarked++;
+                            
+                            results.push({ 
+                                index: i, 
+                                success: true, 
+                                profileName,
+                                airtableAction: airtableResult.action || 'inserted',
+                                recordId: airtableResult.record?.id || 'n/a',
+                                isDuplicate: false,
+                                profileIndex,
+                                spreadsheetMarked: true,
+                                spreadsheetRowId: spreadsheetRecord.id
+                            });
+                        } else {
+                            console.log(`⚠️ No spreadsheet row found for profile: ${profileName} (URL: ${urlValue})`);
+                            results.push({ 
+                                index: i, 
+                                success: true, 
+                                profileName,
+                                airtableAction: airtableResult.action || 'inserted',
+                                recordId: airtableResult.record?.id || 'n/a',
+                                isDuplicate: false,
+                                profileIndex,
+                                spreadsheetMarked: false,
+                                spreadsheetRowId: null
+                            });
+                        }
+                    } catch (spreadsheetError) {
+                        console.warn(`⚠️ Failed to mark spreadsheet row as done for profile ${profileIndex}: ${spreadsheetError.message}`);
+                        results.push({ 
+                            index: i, 
+                            success: true, 
+                            profileName,
+                            airtableAction: airtableResult.action || 'inserted',
+                            recordId: airtableResult.record?.id || 'n/a',
+                            isDuplicate: false,
+                            profileIndex,
+                            spreadsheetMarked: false,
+                            spreadsheetRowId: null,
+                            spreadsheetError: spreadsheetError.message
+                        });
+                    }
+                } else {
+                    // No spreadsheet integration configured
+                    results.push({ 
+                        index: i, 
+                        success: true, 
+                        profileName,
+                        airtableAction: airtableResult.action || 'inserted',
+                        recordId: airtableResult.record?.id || 'n/a',
+                        isDuplicate: false,
+                        profileIndex,
+                        spreadsheetMarked: false,
+                        spreadsheetRowId: null
+                    });
+                }
 
                 console.log(`✅ Profile ${profileIndex} processed successfully (${airtableResult.action})`);
 
@@ -901,7 +984,7 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
         const newProfilesCount = results.filter(r => r.success && !r.isDuplicate).length;
 
         console.log(`🎉 Manual Profile Scraper completed: ${successCount} success, ${errorCount} errors, ${duplicateCount} duplicates skipped`);
-        console.log(`📊 Detailed stats: ${newProfilesAdded} new profiles, ${existingProfilesUpdated} updated, ${validationFailures} validation failures, ${processingErrors} processing errors`);
+        console.log(`📊 Detailed stats: ${newProfilesAdded} new profiles, ${existingProfilesUpdated} updated, ${validationFailures} validation failures, ${processingErrors} processing errors, ${spreadsheetRowsMarked} spreadsheet rows marked as done`);
 
         return res.json({
             success: true,
@@ -920,6 +1003,7 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
             existingProfilesUpdated,
             validationFailures,
             processingErrors,
+            spreadsheetRowsMarked,
             results,
             processingSummary: {
                 total: items.length,
@@ -928,7 +1012,8 @@ app.post('/api/manual-profile-scraper', async (req, res) => {
                 duplicates: duplicateCount,
                 newProfiles: newProfilesCount,
                 validationIssues: validationFailures,
-                processingIssues: processingErrors
+                processingIssues: processingErrors,
+                spreadsheetMarked: spreadsheetRowsMarked
             }
         });
 

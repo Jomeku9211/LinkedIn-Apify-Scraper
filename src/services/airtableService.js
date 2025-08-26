@@ -1,5 +1,24 @@
 const axios = require('axios');
 
+// Basic retry with exponential backoff (max 2 retries as per project rules)
+async function withRetries(fn, { maxRetries = 2, baseDelayMs = 500 } = {}) {
+  let attempt = 0;
+  // jittered exponential backoff
+  while (true) {
+    try {
+      return await fn();
+    } catch (err) {
+      const status = err.response?.status;
+      const shouldRetry = (status === 429 || (status && status >= 500 && status < 600) || err.code === 'ECONNABORTED');
+      if (attempt >= maxRetries || !shouldRetry) throw err;
+      const retryAfter = parseInt(err.response?.headers?.['retry-after'] || '0', 10);
+      const delay = retryAfter > 0 ? retryAfter * 1000 : Math.min(5000, baseDelayMs * Math.pow(2, attempt));
+      await new Promise(r => setTimeout(r, delay + Math.floor(Math.random() * 150)));
+      attempt++;
+    }
+  }
+}
+
 /**
  * Insert data into Airtable with enhanced error handling and validation
  */
@@ -30,7 +49,7 @@ async function insertRecord(data, airtableToken, baseId, tableName) {
       console.log(`   ${key}: ${displayValue}`);
     });
 
-    const response = await axios.post(
+  const response = await withRetries(() => axios.post(
       `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`,
       {
         fields: data
@@ -42,7 +61,7 @@ async function insertRecord(data, airtableToken, baseId, tableName) {
         },
         timeout: 30000 // 30 second timeout
       }
-    );
+  ));
 
     console.log(`✅ Successfully inserted record with ID: ${response.data.id}`);
   console.log(`📊 Record URL: https://airtable.com/${baseId}/${encodeURIComponent(tableName)}/${response.data.id}`);
@@ -90,7 +109,7 @@ async function fetchUrlsFromView(airtableToken, baseId, tableName, viewId) {
   try {
     console.log(`📋 Fetching LinkedIn URLs from Airtable view: ${viewId}`);
     
-    const response = await axios.get(
+  const response = await withRetries(() => axios.get(
       `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`,
       {
         headers: {
@@ -102,7 +121,7 @@ async function fetchUrlsFromView(airtableToken, baseId, tableName, viewId) {
         },
         timeout: 30000
       }
-    );
+  ));
 
     const records = response.data.records;
     console.log(`📊 Found ${records.length} records in view`);
@@ -162,7 +181,7 @@ async function fetchUrlsFromView(airtableToken, baseId, tableName, viewId) {
 async function fetchUrlRecordsFromView(airtableToken, baseId, tableName, viewId) {
   try {
     console.log(`📋 Fetching records (id + URL) from Airtable view: ${viewId}`);
-    const response = await axios.get(
+  const response = await withRetries(() => axios.get(
       `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`,
       {
         headers: {
@@ -172,7 +191,7 @@ async function fetchUrlRecordsFromView(airtableToken, baseId, tableName, viewId)
         params: { view: viewId },
         timeout: 30000
       }
-    );
+  ));
     const FIELD_CANDIDATES = [
       'linkedinUrl', 'LinkedIn URL', 'Linkedin URL', 'LinkedIn', 'Profile URL', 'LinkedIn Profile', 'LinkedIn Profile URL', 'URL'
     ];
@@ -213,7 +232,7 @@ async function insertPostData(postData, airtableToken, baseId, tableName) {
       }
     });
 
-    const response = await axios.post(
+  const response = await withRetries(() => axios.post(
       `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`,
       {
         fields: postData
@@ -225,7 +244,7 @@ async function insertPostData(postData, airtableToken, baseId, tableName) {
         },
         timeout: 30000
       }
-    );
+  ));
 
     console.log(`✅ Successfully inserted post record with ID: ${response.data.id}`);
     return response.data;
@@ -249,7 +268,7 @@ async function fetchRecordsFromView(airtableToken, baseId, tableName, viewId, fi
   try {
     console.log(`📋 Fetching records from Airtable view: ${viewId}`);
     
-    const response = await axios.get(
+  const response = await withRetries(() => axios.get(
       `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`,
       {
         headers: {
@@ -262,7 +281,7 @@ async function fetchRecordsFromView(airtableToken, baseId, tableName, viewId, fi
         },
         timeout: 30000
       }
-    );
+  ));
 
     const records = response.data.records;
     console.log(`📊 Found ${records.length} records in view`);
@@ -300,7 +319,7 @@ async function updateRecord(recordId, data, airtableToken, baseId, tableName) {
   try {
     console.log(`📝 Updating record ${recordId} in Airtable...`);
     
-    const response = await axios.patch(
+  const response = await withRetries(() => axios.patch(
       `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}/${recordId}`,
       {
         fields: data
@@ -312,7 +331,7 @@ async function updateRecord(recordId, data, airtableToken, baseId, tableName) {
         },
         timeout: 30000
       }
-    );
+  ));
 
     console.log(`✅ Successfully updated record ${recordId}`);
     return response.data;
@@ -337,3 +356,44 @@ module.exports = {
   fetchUrlRecordsFromView,
   updateRecord
 };
+
+/**
+ * Find a record by URL via filterByFormula; compares lowercase values.
+ */
+async function findRecordByUrl(airtableToken, baseId, tableName, urlField, urlValue) {
+  try {
+    const formula = `LOWER({${urlField}}) = '${(urlValue || '').toLowerCase().replace(/'/g, "\\'")}'`;
+    const response = await withRetries(() => axios.get(
+      `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`,
+      {
+        headers: { 'Authorization': `Bearer ${airtableToken}` },
+        params: { filterByFormula: formula, maxRecords: 1, pageSize: 1 },
+        timeout: 30000
+      }
+    ));
+    const rec = (response.data?.records || [])[0];
+    return rec || null;
+  } catch (err) {
+    console.error('❌ Error finding record by URL:', err.response?.status, JSON.stringify(err.response?.data));
+    throw err;
+  }
+}
+
+/**
+ * Update existing record by URL or insert a new one if not found.
+ * Returns { action: 'updated'|'inserted', record }
+ */
+async function updateOrInsertByUrl({ airtableToken, baseId, tableName, urlField, urlValue, fields }) {
+  const existing = await findRecordByUrl(airtableToken, baseId, tableName, urlField, urlValue);
+  if (existing) {
+    const updated = await updateRecord(existing.id, fields, airtableToken, baseId, tableName);
+    return { action: 'updated', record: updated };
+  }
+  // ensure urlField present on insert
+  const insertFields = { ...fields, [urlField]: urlValue };
+  const inserted = await insertRecord(insertFields, airtableToken, baseId, tableName);
+  return { action: 'inserted', record: inserted };
+}
+
+module.exports.findRecordByUrl = findRecordByUrl;
+module.exports.updateOrInsertByUrl = updateOrInsertByUrl;

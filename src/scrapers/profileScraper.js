@@ -31,11 +31,36 @@ function detectApifyWarning(logText) {
   const patterns = [
     /redirected\s+10\s+times\b/i,
     /\bWARN\b.*redirected/i,
-    /too many redirects/i
+  /too many redirects/i,
+  /not\s+logged\s+in/i,
+  /login\s+required/i,
+  /unauthorized/i,
+  /forbidden/i,
+  /\b401\b/i,
+  /\b403\b/i,
+  /cookie/i,
+  /li_at/i,
+  /session\s+expired/i
   ];
   for (const re of patterns) {
     const m = logText.match(re);
     if (m) return m[0];
+  }
+  return null;
+}
+
+async function pollForDatasetId(runId, apiToken, maxAttempts = 3, delayMs = 2000) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const runRes = await axios.get(`https://api.apify.com/v2/actor-runs/${encodeURIComponent(runId)}`, {
+      params: { token: apiToken },
+      timeout: 120000
+    });
+    const dsId = runRes.data?.data?.defaultDatasetId;
+    const status = runRes.data?.data?.status;
+    if (dsId) return dsId;
+    if (status === 'SUCCEEDED' && !dsId) break;
+    if (status === 'FAILED' || status === 'ABORTED' || status === 'TIMED_OUT') break;
+    await new Promise(r => setTimeout(r, delayMs));
   }
   return null;
 }
@@ -79,18 +104,49 @@ async function runProfileScraper(input, apiToken, retryCount = 0) {
       }
     }
 
-    if (!datasetId) {
-      throw new Error('No datasetId returned from profile scraper run');
+    let finalDatasetId = datasetId;
+    if (!finalDatasetId && runId) {
+      try {
+        finalDatasetId = await pollForDatasetId(runId, apiToken, 3, 2000);
+        console.log('ℹ️ Polled run for datasetId. Result:', finalDatasetId || 'none');
+      } catch (e) {
+        console.warn('⚠️ Poll for datasetId failed:', e.message);
+      }
+    }
+    // Fallback: directly get dataset items via run-sync-get-dataset-items
+    if (!finalDatasetId) {
+      try {
+        const fbUrl = `https://api.apify.com/v2/acts/${encodeURIComponent(PROFILE_SCRAPER_ACTOR)}/run-sync-get-dataset-items`;
+        const fbResp = await axios.post(fbUrl, input, {
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiToken}` },
+          params: { token: apiToken },
+          timeout: 600000
+        });
+        const items = Array.isArray(fbResp.data) ? fbResp.data : [];
+        console.log(`ℹ️ Fallback used (run-sync-get-dataset-items). Items: ${items.length}`);
+        if (items.length > 0) return items[0];
+      } catch (e) {
+        console.warn('⚠️ Fallback run-sync-get-dataset-items failed:', e.message);
+      }
+      // Treat missing datasetId as critical (stop-and-alert)
+      const critical = new Error('No datasetId returned from profile scraper run');
+      critical.warningDetected = true; // signal orchestrator to stop
+      critical.apifyRun = runId ? { runId } : null;
+      throw critical;
     }
 
     // Fetch dataset items
-    const itemsUrl = `https://api.apify.com/v2/datasets/${encodeURIComponent(datasetId)}/items`;
+  const itemsUrl = `https://api.apify.com/v2/datasets/${encodeURIComponent(finalDatasetId)}/items`;
     const itemsResp = await axios.get(itemsUrl, {
       params: { token: apiToken, format: 'json' },
       timeout: 300000
     });
     if (!Array.isArray(itemsResp.data) || itemsResp.data.length === 0) {
-      throw new Error('No data returned from profile scraper');
+      // Treat no items as critical (stop-and-alert)
+      const critical = new Error('No data returned from profile scraper');
+      critical.warningDetected = true; // signal orchestrator to stop
+      critical.apifyRun = { runId: runId || null, datasetId: finalDatasetId || null };
+      throw critical;
     }
     console.log(`✅ Profile scraper completed. Retrieved ${itemsResp.data.length} items`);
     return itemsResp.data[0];
@@ -128,6 +184,15 @@ async function runProfileScraper(input, apiToken, retryCount = 0) {
       }
     } catch (e) {
       console.error('⚠️ Failed to fetch Apify run details/log:', e.message);
+    }
+
+    // Treat 401/403 as critical (likely cookie/auth issue); don't retry further
+    const statusCode = error.response?.status;
+    if (statusCode === 401 || statusCode === 403) {
+      const authErr = new Error(`Authentication failure (${statusCode}). Cookies may be expired.`);
+      authErr.warningDetected = true;
+      authErr.apifyRun = null;
+      throw authErr;
     }
 
     if (retryCount < MAX_RETRIES) {
