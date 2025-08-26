@@ -96,3 +96,6 @@ typings/
 scrapping-468707-9d0cffbf03a2.json
 *.gsa.json
 *.service-account.json
+
+.env.temp
+.env
