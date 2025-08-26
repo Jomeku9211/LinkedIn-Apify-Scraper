@@ -1,0 +1,21 @@
+[
+  {
+    "inputUrl": "https://www.linkedin.com/in/testuser1",
+    "urn": "urn:li:activity:7361192233288544256",
+    "commentary": {
+      "text": {
+        "text": "This is a test post content for user 1"
+      }
+    },
+    "postedAtISO": "2024-01-15T10:00:00Z",
+    "date": "2024-01-15"
+  },
+  {
+    "inputUrl": "https://www.linkedin.com/in/testuser2",
+    "url": "https://www.linkedin.com/posts/testuser2_post456",
+    "text": "This is another test post content for user 2",
+    "postedAtISO": "2024-01-16T14:30:00Z",
+    "date": "2024-01-16"
+  }
+]
+ ie 

@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="-1">
+    <title>Post Import - Coder-Farm Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;500;700&family=Poppins:wght@500;600;700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --brand-primary: #2C426B;
+            --brand-secondary: #8DBAD7;
+            --brand-accent: #F16a24;
+            --gray-100: #f8f9fa;
+            --gray-200: #f1f3f4;
+            --gray-300: #e1e5e9;
+            --gray-600: #6c757d;
+            --text-dark: #2d3748;
+            --success: #28a745;
+            --danger: #dc3545;
+            --page-bg: #f5f5f7;
+            --border-soft: rgba(0,0,0,0.08);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Lato', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--page-bg);
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: #ffffff;
+            color: var(--text-dark);
+            padding: 20px 24px;
+            text-align: center;
+            border-bottom: 1px solid var(--border-soft);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-family: 'Poppins', sans-serif;
+            color: var(--brand-primary);
+        }
+        
+        .header p {
+            font-size: 1em;
+            opacity: 0.7;
+        }
+        
+        .nav-menu {
+            background: #fff;
+            padding: 15px 24px;
+            border-bottom: 1px solid var(--gray-300);
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .nav-link {
+            padding: 10px 20px;
+            text-decoration: none;
+            color: var(--gray-600);
+            border-radius: 8px;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        
+        .nav-link:hover {
+            background: var(--gray-100);
+            color: var(--brand-primary);
+        }
+        
+        .nav-link.active {
+            background: var(--brand-primary);
+            color: white;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        
+        .main-content {
+            background: #fff;
+            border-radius: 14px;
+            border: 1px solid var(--border-soft);
+            box-shadow: 0 10px 24px rgba(0,0,0,0.06);
+            overflow: hidden;
+        }
+        
+        .config-panel {
+            padding: 24px;
+            border-bottom: 1px solid var(--gray-200);
+        }
+        
+        .panel-title {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            color: var(--text-dark);
+            font-family: 'Poppins', sans-serif;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text-dark);
+        }
+        
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid var(--gray-200);
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: var(--brand-primary);
+        }
+        
+        .form-group small {
+            color: var(--gray-600);
+            font-size: 12px;
+            margin-top: 4px;
+            display: block;
+        }
+        
+        .upload-area {
+            border: 2px dashed var(--gray-300);
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            background: var(--gray-100);
+            transition: border-color 0.2s;
+            cursor: pointer;
+        }
+        
+        .upload-area:hover {
+            border-color: var(--brand-primary);
+        }
+        
+        .upload-area.dragover {
+            border-color: var(--brand-primary);
+            background: var(--gray-200);
+        }
+        
+        .upload-icon {
+            font-size: 3em;
+            color: var(--gray-600);
+            margin-bottom: 16px;
+        }
+        
+        .upload-text {
+            color: var(--gray-600);
+            margin-bottom: 8px;
+        }
+        
+        .upload-hint {
+            color: var(--gray-600);
+            font-size: 12px;
+        }
+        
+        .import-btn {
+            background: var(--success);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 16px;
+        }
+        
+        .import-btn:hover {
+            background: #218838;
+        }
+        
+        .import-btn:disabled {
+            background: var(--gray-300);
+            cursor: not-allowed;
+        }
+        
+        .status-panel {
+            padding: 24px;
+        }
+        
+        .log-container {
+            background: var(--gray-100);
+            border-radius: 8px;
+            padding: 16px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+        }
+        
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 4px 0;
+        }
+        
+        .log-info { color: var(--text-dark); }
+        .log-success { color: var(--success); }
+        .log-error { color: var(--danger); }
+        .log-warning { color: #ffc107; }
+        
+        .file-info {
+            background: var(--gray-100);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        
+        .file-name {
+            font-weight: 600;
+            color: var(--brand-primary);
+            margin-bottom: 8px;
+        }
+        
+        .file-details {
+            color: var(--gray-600);
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⤴️ Post Import</h1>
+        <p>Import LinkedIn post data from JSON files</p>
+    </div>
+    
+    <div class="nav-menu">
+        <a href="/" class="nav-link">🏠 Dashboard</a>
+        <a href="/post-scraper" class="nav-link">📄 Post Scraper</a>
+        <a href="/post-import" class="nav-link active">⤴️ Post Import</a>
+        <a href="/chatgpt" class="nav-link">🤖 ChatGPT Agent</a>
+        <a href="/logout" class="nav-link">🚪 Logout</a>
+    </div>
+    
+    <div class="container">
+        <div class="main-content">
+            <div class="config-panel">
+                <h2 class="panel-title">📁 Import Configuration</h2>
+                <div class="form-group">
+                    <label for="viewInput">Airtable View ID (Optional):</label>
+                    <input type="text" id="viewInput" placeholder="Leave empty to use default view">
+                    <small>Specific Airtable view to import posts into</small>
+                </div>
+                
+                <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+                    <div class="upload-icon">📁</div>
+                    <div class="upload-text">Click to select or drag & drop JSON file</div>
+                    <div class="upload-hint">Supports JSON files with LinkedIn post data</div>
+                </div>
+                
+                <input type="file" id="fileInput" accept=".json" style="display: none;" onchange="handleFileSelect(event)">
+                
+                <div id="fileInfo" class="file-info" style="display: none;">
+                    <div class="file-name" id="fileName"></div>
+                    <div class="file-details" id="fileDetails"></div>
+                </div>
+                
+                <button class="import-btn" id="importBtn" onclick="importPosts()" disabled>📤 Import Posts</button>
+            </div>
+            
+            <div class="status-panel">
+                <h2 class="panel-title">📊 Import Status</h2>
+                <div class="log-container" id="importLogContainer">
+                    <div class="log-entry log-info">💡 Select a JSON file to begin importing LinkedIn posts...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedFile = null;
+        let records = [];
+
+        // Drag and drop functionality
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                handleFile(file);
+            }
+        }
+
+        function handleFile(file) {
+            selectedFile = file;
+            records = [];
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const text = e.target.result;
+                    
+                    if (file.name.toLowerCase().endsWith('.json')) {
+                        const parsed = JSON.parse(text);
+                        if (!Array.isArray(parsed)) throw new Error('JSON must be an array');
+                        records = parsed;
+                        addLog(`📊 JSON parsed: ${records.length} records`, 'success');
+                        
+                        // Process records
+                        records = records.map(r => {
+                            let postUrl = r.url || '';
+                            if (!postUrl && r.urn) {
+                                postUrl = `https://www.linkedin.com/feed/update/${r.urn}/`;
+                            }
+                            
+                            let postText = r.text || '';
+                            if (!postText && r.commentary && r.commentary.text && r.commentary.text.text) {
+                                postText = r.commentary.text.text;
+                            }
+                            
+                            return {
+                                linkedinUrl: (r.inputUrl || '').toString().trim(),
+                                url: postUrl.toString().trim(),
+                                text: postText.toString(),
+                                postedAtISO: (r.postedAtISO || '').toString(),
+                                date: (r.date || '').toString()
+                            };
+                        });
+                        
+                        // Filter records
+                        const beforeFilter = records.length;
+                        records = records.filter(r => {
+                            const hasLinkedInUrl = r.linkedinUrl && r.linkedinUrl.length > 0;
+                            return hasLinkedInUrl;
+                        });
+                        
+                        addLog(`📊 Filtered: ${records.length}/${beforeFilter} records kept`, 'info');
+
+                        if (records.length === 0) {
+                            addLog(`❌ No valid records found after filtering.`, 'error');
+                            addLog(`💡 Your JSON must have 'inputUrl' field for LinkedIn URL`, 'info');
+                            addLog(`💡 For post URL, use 'url' or 'urn' (will construct: https://www.linkedin.com/feed/update/{urn}/)`, 'info');
+                            addLog(`💡 For post text, use 'text' or nested 'commentary.text.text'`, 'info');
+                            return;
+                        }
+
+                        // Show file info
+                        document.getElementById('fileName').textContent = file.name;
+                        document.getElementById('fileDetails').textContent = `${records.length} valid records ready for import`;
+                        document.getElementById('fileInfo').style.display = 'block';
+                        document.getElementById('importBtn').disabled = false;
+                        
+                        addLog(`✅ ${records.length} records ready for import`, 'success');
+                    } else {
+                        throw new Error('Only JSON files are supported');
+                    }
+                } catch (err) {
+                    addLog(`❌ Error processing file: ${err.message}`, 'error');
+                    document.getElementById('fileInfo').style.display = 'none';
+                    document.getElementById('importBtn').disabled = true;
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        async function importPosts() {
+            if (records.length === 0) {
+                addLog('❌ No records to import', 'error');
+                return;
+            }
+
+            addLog(`📤 Starting import of ${records.length} records...`, 'info');
+            document.getElementById('importBtn').disabled = true;
+            document.getElementById('importBtn').textContent = '⏳ Importing...';
+
+            try {
+                const resp = await fetch('/api/import-posts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        records, 
+                        viewId: (document.getElementById('viewInput').value || '').trim() || undefined 
+                    })
+                });
+                
+                if (!resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    throw new Error(data.error || `HTTP ${resp.status}`);
+                }
+                
+                const data = await resp.json();
+                addLog(`🎉 Import complete!`, 'success');
+                addLog(`📊 Results: ${data.updated} updated, ${data.notFound} not found, ${data.errors} errors`, 'info');
+                
+            } catch (err) {
+                addLog(`❌ Import failed: ${err.message}`, 'error');
+            } finally {
+                document.getElementById('importBtn').disabled = false;
+                document.getElementById('importBtn').textContent = '📤 Import Posts';
+            }
+        }
+
+        function addLog(message, type = 'info') {
+            const logContainer = document.getElementById('importLogContainer');
+            const timestamp = new Date().toLocaleTimeString();
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            while (logContainer.children.length > 100) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+    </script>
+</body>
+</html>
+
+
+
+
